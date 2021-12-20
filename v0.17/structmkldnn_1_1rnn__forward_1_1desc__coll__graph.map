@@ -1,0 +1,7 @@
+<map id="mkldnn::rnn_forward::desc" name="mkldnn::rnn_forward::desc">
+<area shape="rect" id="node2" href="$structmkldnn__rnn__desc__t.html" title="A descriptor for an rnn operation. " alt="" coords="95,421,243,448"/>
+<area shape="rect" id="node3" href="$structmkldnn__rnn__cell__desc__t.html" title="mkldnn_rnn_cell_desc_t" alt="" coords="5,96,184,123"/>
+<area shape="rect" id="node4" href="$structmkldnn__memory__desc__t.html" title="Memory descriptor. " alt="" coords="209,96,391,123"/>
+<area shape="rect" id="node5" href="$structmkldnn__blocking__desc__t.html" title="Generic description of blocked data layout for most memory formats. " alt="" coords="111,5,293,32"/>
+<area shape="rect" id="node6" href="$structmkldnn__wino__desc__t.html" title="Description of tensor of weights for winograd 2x3 convolution. " alt="" coords="318,5,476,32"/>
+</map>

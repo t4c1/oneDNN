@@ -1,0 +1,47 @@
+<map id="dnnl::primitive_desc" name="dnnl::primitive_desc">
+<area shape="rect" id="node4" href="$structdnnl_1_1batch__normalization__backward_1_1primitive__desc.html" title="Primitive descriptor for a batch normalization backward propagation primitive. " alt="" coords="678,5,874,46"/>
+<area shape="rect" id="node5" href="$structdnnl_1_1batch__normalization__forward_1_1primitive__desc.html" title="Primitive descriptor for a batch normalization forward propagation primitive. " alt="" coords="681,70,871,111"/>
+<area shape="rect" id="node6" href="$structdnnl_1_1binary_1_1primitive__desc.html" title="Primitive descriptor for an elementwise binary operator primitive. " alt="" coords="675,136,877,163"/>
+<area shape="rect" id="node7" href="$structdnnl_1_1convolution__backward__data_1_1primitive__desc.html" title="Primitive descriptor for a convolution backward propagation primitive. " alt="" coords="674,187,878,229"/>
+<area shape="rect" id="node8" href="$structdnnl_1_1convolution__backward__weights_1_1primitive__desc.html" title="Primitive descriptor for a convolution weights gradient primitive. " alt="" coords="674,253,878,294"/>
+<area shape="rect" id="node9" href="$structdnnl_1_1convolution__forward_1_1primitive__desc.html" title="Primitive descriptor for a convolution forward propagation primitive. " alt="" coords="681,318,871,359"/>
+<area shape="rect" id="node10" href="$structdnnl_1_1deconvolution__backward__data_1_1primitive__desc.html" title="Primitive descriptor for a deconvolution backward propagation primitive. " alt="" coords="660,383,892,425"/>
+<area shape="rect" id="node11" href="$structdnnl_1_1deconvolution__backward__weights_1_1primitive__desc.html" title="Primitive descriptor for a deconvolution weights gradient primitive. " alt="" coords="649,449,903,490"/>
+<area shape="rect" id="node12" href="$structdnnl_1_1deconvolution__forward_1_1primitive__desc.html" title="Primitive descriptor for a deconvolution forward propagation primitive. " alt="" coords="685,514,867,555"/>
+<area shape="rect" id="node13" href="$structdnnl_1_1eltwise__backward_1_1primitive__desc.html" title="Primitive descriptor for eltwise backward propagation. " alt="" coords="689,579,863,621"/>
+<area shape="rect" id="node14" href="$structdnnl_1_1eltwise__forward_1_1primitive__desc.html" title="Primitive descriptor for an elementwise forward propagation primitive. " alt="" coords="695,645,857,686"/>
+<area shape="rect" id="node15" href="$structdnnl_1_1inner__product__backward__data_1_1primitive__desc.html" title="Primitive descriptor for an inner product backward propagation primitive. " alt="" coords="660,710,892,751"/>
+<area shape="rect" id="node16" href="$structdnnl_1_1inner__product__backward__weights_1_1primitive__desc.html" title="Primitive descriptor for an inner product weights gradient primitive. " alt="" coords="649,775,903,817"/>
+<area shape="rect" id="node17" href="$structdnnl_1_1inner__product__forward_1_1primitive__desc.html" title="Primitive descriptor for an inner product forward propagation primitive. " alt="" coords="685,841,867,882"/>
+<area shape="rect" id="node18" href="$structdnnl_1_1layer__normalization__backward_1_1primitive__desc.html" title="Primitive descriptor for a layer normalization backward propagation primitive. " alt="" coords="678,906,874,947"/>
+<area shape="rect" id="node19" href="$structdnnl_1_1layer__normalization__forward_1_1primitive__desc.html" title="Primitive descriptor for a layer normalization forward propagation primitive. " alt="" coords="682,971,870,1013"/>
+<area shape="rect" id="node20" href="$structdnnl_1_1logsoftmax__backward_1_1primitive__desc.html" title="Primitive descriptor for a logsoftmax backward propagation primitive. " alt="" coords="675,1037,877,1078"/>
+<area shape="rect" id="node21" href="$structdnnl_1_1logsoftmax__forward_1_1primitive__desc.html" title="Primitive descriptor for a logsoftmax forward propagation primitive. " alt="" coords="681,1102,871,1143"/>
+<area shape="rect" id="node22" href="$structdnnl_1_1lrn__backward_1_1primitive__desc.html" title="Primitive descriptor for an LRN backward propagation primitive. " alt="" coords="703,1167,849,1209"/>
+<area shape="rect" id="node23" href="$structdnnl_1_1lrn__forward_1_1primitive__desc.html" title="Primitive descriptor for an LRN forward propagation primitive. " alt="" coords="706,1233,846,1274"/>
+<area shape="rect" id="node24" href="$structdnnl_1_1matmul_1_1primitive__desc.html" title="Primitive descriptor for a matmul primitive. " alt="" coords="669,1299,883,1325"/>
+<area shape="rect" id="node25" href="$structdnnl_1_1pooling__backward_1_1primitive__desc.html" title="Primitive descriptor for a pooling backward propagation primitive. " alt="" coords="688,1350,864,1391"/>
+<area shape="rect" id="node26" href="$structdnnl_1_1pooling__forward_1_1primitive__desc.html" title="Primitive descriptor for a pooling forward propagation primitive. " alt="" coords="695,1415,857,1457"/>
+<area shape="rect" id="node27" href="$structdnnl_1_1pooling__v2__backward_1_1primitive__desc.html" title="Primitive descriptor for a pooling v2 (dilated pooling) backward propagation primitive. " alt="" coords="677,1481,875,1522"/>
+<area shape="rect" id="node28" href="$structdnnl_1_1pooling__v2__forward_1_1primitive__desc.html" title="Primitive descriptor for a pooling forward propagation primitive. " alt="" coords="683,1546,869,1587"/>
+<area shape="rect" id="node29" href="$structdnnl_1_1prelu__backward_1_1primitive__desc.html" title="Primitive descriptor for prelu backward propagation. " alt="" coords="695,1611,857,1653"/>
+<area shape="rect" id="node30" href="$structdnnl_1_1prelu__forward_1_1primitive__desc.html" title="Primitive descriptor for a PReLU forward propagation primitive. " alt="" coords="702,1677,850,1718"/>
+<area shape="rect" id="node31" href="$structdnnl_1_1reduction_1_1primitive__desc.html" title="Primitive descriptor for a reduction primitive. " alt="" coords="665,1743,887,1769"/>
+<area shape="rect" id="node32" href="$structdnnl_1_1resampling__backward_1_1primitive__desc.html" title="Primitive descriptor for resampling backward propagation primitive. " alt="" coords="675,1794,877,1835"/>
+<area shape="rect" id="node33" href="$structdnnl_1_1resampling__forward_1_1primitive__desc.html" title="Primitive descriptor for a resampling forward propagation primitive. " alt="" coords="682,1859,870,1901"/>
+<area shape="rect" id="node34" href="$structdnnl_1_1rnn__primitive__desc__base.html" title="Base class for primitive descriptors for RNN primitives. " alt="" coords="703,1925,849,1966"/>
+<area shape="rect" id="node43" href="$structdnnl_1_1shuffle__backward_1_1primitive__desc.html" title="Primitive descriptor for a shuffle backward propagation primitive. " alt="" coords="690,1990,862,2031"/>
+<area shape="rect" id="node44" href="$structdnnl_1_1shuffle__forward_1_1primitive__desc.html" title="Primitive descriptor for a shuffle forward propagation primitive. " alt="" coords="697,2055,855,2097"/>
+<area shape="rect" id="node45" href="$structdnnl_1_1softmax__backward_1_1primitive__desc.html" title="Primitive descriptor for a softmax backward propagation primitive. " alt="" coords="685,2121,867,2162"/>
+<area shape="rect" id="node46" href="$structdnnl_1_1softmax__forward_1_1primitive__desc.html" title="Primitive descriptor for a softmax forward propagation primitive. " alt="" coords="691,2186,861,2227"/>
+<area shape="rect" id="node2" href="$structdnnl_1_1primitive__desc__base.html" title="Base class for all primitive descriptors. " alt="" coords="205,1109,397,1136"/>
+<area shape="rect" id="node3" href="$structdnnl_1_1handle.html" title="dnnl::handle\&lt; dnnl\l_primitive_desc_t \&gt;" alt="" coords="5,1102,157,1143"/>
+<area shape="rect" id="node35" href="$structdnnl_1_1gru__backward_1_1primitive__desc.html" title="Primitive descriptor for a GRU backward propagation primitive. " alt="" coords="977,1695,1127,1737"/>
+<area shape="rect" id="node36" href="$structdnnl_1_1gru__forward_1_1primitive__desc.html" title="Primitive descriptor for a GRU forward propagation primitive. " alt="" coords="980,1761,1124,1802"/>
+<area shape="rect" id="node37" href="$structdnnl_1_1lbr__gru__backward_1_1primitive__desc.html" title="Primitive descriptor for an LBR GRU backward propagation primitive. " alt="" coords="965,1826,1139,1867"/>
+<area shape="rect" id="node38" href="$structdnnl_1_1lbr__gru__forward_1_1primitive__desc.html" title="Primitive descriptor for an LBR GRU forward propagation primitive. " alt="" coords="972,1891,1132,1933"/>
+<area shape="rect" id="node39" href="$structdnnl_1_1lstm__backward_1_1primitive__desc.html" title="Primitive descriptor for an LSTM backward propagation primitive. " alt="" coords="973,1957,1131,1998"/>
+<area shape="rect" id="node40" href="$structdnnl_1_1lstm__forward_1_1primitive__desc.html" title="Primitive descriptor for an LSTM forward propagation primitive. " alt="" coords="980,2022,1124,2063"/>
+<area shape="rect" id="node41" href="$structdnnl_1_1vanilla__rnn__backward_1_1primitive__desc.html" title="Primitive descriptor for an RNN backward propagation primitive. " alt="" coords="952,2087,1152,2129"/>
+<area shape="rect" id="node42" href="$structdnnl_1_1vanilla__rnn__forward_1_1primitive__desc.html" title="Primitive descriptor for a vanilla RNN forward propagation primitive. " alt="" coords="959,2153,1145,2194"/>
+</map>

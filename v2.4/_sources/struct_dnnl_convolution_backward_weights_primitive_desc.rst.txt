@@ -1,0 +1,307 @@
+.. index:: pair: struct; dnnl::convolution_backward_weights::primitive_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc:
+
+struct dnnl::convolution_backward_weights::primitive_desc
+=========================================================
+
+.. toctree::
+	:hidden:
+
+Overview
+~~~~~~~~
+
+Primitive descriptor for a convolution weights gradient primitive. :ref:`More...<details-structdnnl_1_1convolution__backward__weights_1_1primitive__desc>`
+
+
+.. ref-code-block:: cpp
+	:class: doxyrest-overview-code-block
+
+	#include <dnnl.hpp>
+	
+	struct primitive_desc: public :ref:`dnnl::primitive_desc<doxid-structdnnl_1_1primitive__desc>`
+	{
+		// methods
+	
+		:ref:`primitive_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1ac5e0c28ebaa99aa9ad3957dc64079181>`();
+	
+		:ref:`primitive_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1ac8e2d74ed74f23e984893f2a1c8c1baa>`(
+			const :ref:`desc<doxid-structdnnl_1_1convolution__backward__weights_1_1desc>`& adesc,
+			const :ref:`engine<doxid-structdnnl_1_1engine>`& aengine,
+			const :ref:`convolution_forward::primitive_desc<doxid-structdnnl_1_1convolution__forward_1_1primitive__desc>`& hint_fwd_pd,
+			bool allow_empty = false
+			);
+	
+		:ref:`primitive_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a3ce1d91ca97a4c51c935d2dfbb5a9e99>`(
+			const :ref:`desc<doxid-structdnnl_1_1convolution__backward__weights_1_1desc>`& adesc,
+			const primitive_attr& attr,
+			const :ref:`engine<doxid-structdnnl_1_1engine>`& aengine,
+			const :ref:`convolution_forward::primitive_desc<doxid-structdnnl_1_1convolution__forward_1_1primitive__desc>`& hint_fwd_pd,
+			bool allow_empty = false
+			);
+	
+		:ref:`primitive_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a4c76ab88f4eee91cfda2eba496d7ac38>`(:ref:`dnnl_primitive_desc_t<doxid-group__dnnl__api__primitives__common_1gaabde3e27edf071b62b39f47bace7efd6>` pd);
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`src_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a2d2c0750f733cd79da51454cd718ff78>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_weights_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1ae065dc95bd3a7ebd670c9012d505fa08>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_dst_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a2a3a724c917eeb3f77174e8118ead4b3>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_bias_desc<doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a2088ac84ee53b5ee1673cf5eaa836698>`() const;
+	};
+
+Inherited Members
+-----------------
+
+.. ref-code-block:: cpp
+	:class: doxyrest-overview-inherited-code-block
+
+	public:
+		// methods
+	
+		:ref:`handle<doxid-structdnnl_1_1handle_1a5c631f7e5e4c92a13edb8e3422d3a973>`();
+		:ref:`handle<doxid-structdnnl_1_1handle_1a022001b5b9c8940a1326a02b61fc4860>`(const :ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&);
+		:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>& :ref:`operator =<doxid-structdnnl_1_1handle_1a4ad1ff54e4aafeb560a869c49aa20b52>` (const :ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&);
+		:ref:`handle<doxid-structdnnl_1_1handle_1aa13f3ecf4db240717074814412c7e70c>`(:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&&);
+		:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>& :ref:`operator =<doxid-structdnnl_1_1handle_1af3f85524f3d83abdd4917b46ce23e727>` (:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&&);
+		:ref:`handle<doxid-structdnnl_1_1handle_1a9c408c09fce1278f5cb0d1fa9818fc86>`(T t, bool weak = false);
+		void :ref:`reset<doxid-structdnnl_1_1handle_1a8862ef3d31c3b19bd88395e0b1373909>`(T t, bool weak = false);
+		T :ref:`get<doxid-structdnnl_1_1handle_1affb19aaf768579eebdf885edbbef7d7a>`(bool allow_empty = false) const;
+		:ref:`operator T<doxid-structdnnl_1_1handle_1ab3560c3d12724f48e9fdbe47077ff342>` () const;
+		:ref:`operator bool<doxid-structdnnl_1_1handle_1af014b68c14db64b9bb6a2034fe04440e>` () const;
+		bool :ref:`operator ==<doxid-structdnnl_1_1handle_1a8569ba9d1b62264df858f3b3316577c6>` (const :ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>& other) const;
+		bool :ref:`operator !=<doxid-structdnnl_1_1handle_1a4aaa512672b0ed203ef78be4ceac025e>` (const :ref:`handle<doxid-structdnnl_1_1handle>`& other) const;
+		:ref:`primitive_desc_base<doxid-structdnnl_1_1primitive__desc__base_1a27780142d0880bb0ca678f7c5a1845b9>`();
+		:ref:`engine<doxid-structdnnl_1_1engine>` :ref:`get_engine<doxid-structdnnl_1_1primitive__desc__base_1a3f3ea17a8e5767653732ebec37eff68f>`() const;
+		const char* :ref:`impl_info_str<doxid-structdnnl_1_1primitive__desc__base_1a28661bd29607c71ecb8602d6c98adbc5>`() const;
+		:ref:`memory::dim<doxid-structdnnl_1_1memory_1a6ad818e4699872cc913474fa5f122cd5>` :ref:`query_s64<doxid-structdnnl_1_1primitive__desc__base_1aa3936cde6aa188f79cc379200de718b3>`(:ref:`query<doxid-group__dnnl__api__primitives__common_1ga94efdd650364f4d9776cfb9b711cbdc1>` what) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`query_md<doxid-structdnnl_1_1primitive__desc__base_1ac2ec36092718ed89bece0fec7f5f3171>`(:ref:`query<doxid-group__dnnl__api__primitives__common_1ga94efdd650364f4d9776cfb9b711cbdc1>` what, int idx = 0) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`src_desc<doxid-structdnnl_1_1primitive__desc__base_1a31ee74fc65986558ac11db590945811a>`(int idx) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`dst_desc<doxid-structdnnl_1_1primitive__desc__base_1a0b724a92606a86a7ac9b6b9b07935529>`(int idx) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`weights_desc<doxid-structdnnl_1_1primitive__desc__base_1a35b7fb7725959ab336db58dd05e14d20>`(int idx) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_src_desc<doxid-structdnnl_1_1primitive__desc__base_1aeb499ab1390d20eb071d97ec4628029f>`(int idx) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_dst_desc<doxid-structdnnl_1_1primitive__desc__base_1aa95dd1711a45923204ffddc3f02ea546>`(int idx) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_weights_desc<doxid-structdnnl_1_1primitive__desc__base_1ab6dc65154169608dfb9c2e9842012826>`(int idx) const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`src_desc<doxid-structdnnl_1_1primitive__desc__base_1aa49d0307308faad5df4e5606583528f5>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`dst_desc<doxid-structdnnl_1_1primitive__desc__base_1ab4ce5fa06a8caa2237a6bf6e42d937d9>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`weights_desc<doxid-structdnnl_1_1primitive__desc__base_1af378f246b843e31bfdada2f386662667>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_src_desc<doxid-structdnnl_1_1primitive__desc__base_1a9bdf1c2edfe6afdde73f9acde10b2da9>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_dst_desc<doxid-structdnnl_1_1primitive__desc__base_1a88db48bf81f033a479ef2b1031504b4c>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`diff_weights_desc<doxid-structdnnl_1_1primitive__desc__base_1ad7cf56d773bf8daefdeabff31093ae2b>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`workspace_desc<doxid-structdnnl_1_1primitive__desc__base_1aaf33632e215a1f2b066a6111836ecbb3>`() const;
+		:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` :ref:`scratchpad_desc<doxid-structdnnl_1_1primitive__desc__base_1af8bb36148b4bb356ae61cf48353910fb>`() const;
+		:ref:`engine<doxid-structdnnl_1_1engine>` :ref:`scratchpad_engine<doxid-structdnnl_1_1primitive__desc__base_1aa1e474433668f235b8fb3888d399f200>`() const;
+		primitive_attr :ref:`get_primitive_attr<doxid-structdnnl_1_1primitive__desc__base_1a9d26b8c1068f0849da74a6ba358e5de6>`() const;
+		:ref:`dnnl::primitive::kind<doxid-structdnnl_1_1primitive_1ad1ec93215a0cf3aa0a32bae0c2cd9169>` :ref:`get_kind<doxid-structdnnl_1_1primitive__desc__base_1a622be560a40df3c657b18904f81f2a0a>`() const;
+		:ref:`primitive_desc<doxid-structdnnl_1_1primitive__desc_1ae5452031cfd89bda919543dace0ff7bd>`();
+	
+		:ref:`primitive_desc<doxid-structdnnl_1_1primitive__desc_1a1d5b57166120c0204ee4bb86d310b9ab>`(
+			:ref:`const_dnnl_op_desc_t<doxid-group__dnnl__api__primitives__common_1ga68197f349eb0876085adfb385d8932de>` desc,
+			const primitive_attr* attr,
+			const :ref:`engine<doxid-structdnnl_1_1engine>`& aengine,
+			:ref:`const_dnnl_primitive_desc_t<doxid-group__dnnl__api__primitives__common_1gad48db8dee6ec426d067597ff7af232ee>` hint_fwd_pd,
+			bool allow_empty = false
+			);
+	
+		bool :ref:`next_impl<doxid-structdnnl_1_1primitive__desc_1a841df469ca54c3de2d233e46f48322b2>`();
+
+.. _details-structdnnl_1_1convolution__backward__weights_1_1primitive__desc:
+
+Detailed Documentation
+~~~~~~~~~~~~~~~~~~~~~~
+
+Primitive descriptor for a convolution weights gradient primitive.
+
+Methods
+-------
+
+.. index:: pair: function; primitive_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1ac5e0c28ebaa99aa9ad3957dc64079181:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	primitive_desc()
+
+Default constructor. Produces an empty object.
+
+.. index:: pair: function; primitive_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1ac8e2d74ed74f23e984893f2a1c8c1baa:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	primitive_desc(
+		const :ref:`desc<doxid-structdnnl_1_1convolution__backward__weights_1_1desc>`& adesc,
+		const :ref:`engine<doxid-structdnnl_1_1engine>`& aengine,
+		const :ref:`convolution_forward::primitive_desc<doxid-structdnnl_1_1convolution__forward_1_1primitive__desc>`& hint_fwd_pd,
+		bool allow_empty = false
+		)
+
+Constructs a primitive descriptor for a convolution weights gradient primitive.
+
+
+
+.. rubric:: Parameters:
+
+.. list-table::
+	:widths: 20 80
+
+	*
+		- adesc
+
+		- Descriptor for a convolution weights gradient primitive.
+
+	*
+		- aengine
+
+		- Engine to use.
+
+	*
+		- hint_fwd_pd
+
+		- Primitive descriptor for a convolution forward propagation primitive. It is used as a hint for deciding which memory format to use.
+
+	*
+		- allow_empty
+
+		- A flag signifying whether construction is allowed to fail without throwing an exception. In this case an empty object will be produced. This flag is optional and defaults to false.
+
+.. index:: pair: function; primitive_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a3ce1d91ca97a4c51c935d2dfbb5a9e99:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	primitive_desc(
+		const :ref:`desc<doxid-structdnnl_1_1convolution__backward__weights_1_1desc>`& adesc,
+		const primitive_attr& attr,
+		const :ref:`engine<doxid-structdnnl_1_1engine>`& aengine,
+		const :ref:`convolution_forward::primitive_desc<doxid-structdnnl_1_1convolution__forward_1_1primitive__desc>`& hint_fwd_pd,
+		bool allow_empty = false
+		)
+
+Constructs a primitive descriptor for a convolution weights gradient primitive.
+
+
+
+.. rubric:: Parameters:
+
+.. list-table::
+	:widths: 20 80
+
+	*
+		- adesc
+
+		- Descriptor for a convolution weights gradient primitive.
+
+	*
+		- attr
+
+		- Primitive attributes to use.
+
+	*
+		- aengine
+
+		- Engine to use.
+
+	*
+		- hint_fwd_pd
+
+		- Primitive descriptor for a convolution forward propagation primitive. It is used as a hint for deciding which memory format to use.
+
+	*
+		- allow_empty
+
+		- A flag signifying whether construction is allowed to fail without throwing an exception. In this case an empty object will be produced. This flag is optional and defaults to false.
+
+.. index:: pair: function; primitive_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a4c76ab88f4eee91cfda2eba496d7ac38:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	primitive_desc(:ref:`dnnl_primitive_desc_t<doxid-group__dnnl__api__primitives__common_1gaabde3e27edf071b62b39f47bace7efd6>` pd)
+
+Constructs a primitive descriptor for a convolution weights gradient primitive from a C API primitive descriptor that must have a matching kind.
+
+
+
+.. rubric:: Parameters:
+
+.. list-table::
+	:widths: 20 80
+
+	*
+		- pd
+
+		- C API primitive descriptor for a convolution weights gradient primitive.
+
+.. index:: pair: function; src_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a2d2c0750f733cd79da51454cd718ff78:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` src_desc() const
+
+Returns a source memory descriptor.
+
+
+
+.. rubric:: Returns:
+
+Source memory descriptor.
+
+A zero memory descriptor if the primitive does not have a source parameter.
+
+.. index:: pair: function; diff_weights_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1ae065dc95bd3a7ebd670c9012d505fa08:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` diff_weights_desc() const
+
+Returns a diff weights memory descriptor.
+
+
+
+.. rubric:: Returns:
+
+Diff weights memory descriptor.
+
+A zero memory descriptor if the primitive does not have a diff weights parameter.
+
+.. index:: pair: function; diff_dst_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a2a3a724c917eeb3f77174e8118ead4b3:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` diff_dst_desc() const
+
+Returns a diff destination memory descriptor.
+
+
+
+.. rubric:: Returns:
+
+Diff destination memory descriptor.
+
+A zero memory descriptor if the primitive does not have a diff destination parameter.
+
+.. index:: pair: function; diff_bias_desc
+.. _doxid-structdnnl_1_1convolution__backward__weights_1_1primitive__desc_1a2088ac84ee53b5ee1673cf5eaa836698:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	:ref:`memory::desc<doxid-structdnnl_1_1memory_1_1desc>` diff_bias_desc() const
+
+Returns the diff bias memory descriptor.
+
+
+
+.. rubric:: Returns:
+
+The diff bias memory descriptor.
+
+A zero memory descriptor of the primitive does not have a diff bias parameter.
+

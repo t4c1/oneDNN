@@ -1,0 +1,110 @@
+.. index:: pair: struct; dnnl::inner_product_backward_weights
+.. _doxid-structdnnl_1_1inner__product__backward__weights:
+
+struct dnnl::inner_product_backward_weights
+===========================================
+
+.. toctree::
+	:hidden:
+
+	struct_dnnl_inner_product_backward_weights_desc.rst
+	struct_dnnl_inner_product_backward_weights_primitive_desc.rst
+
+Overview
+~~~~~~~~
+
+Inner product weights gradient primitive. :ref:`More...<details-structdnnl_1_1inner__product__backward__weights>`
+
+
+.. ref-code-block:: cpp
+	:class: doxyrest-overview-code-block
+
+	#include <dnnl.hpp>
+	
+	struct inner_product_backward_weights: public :ref:`dnnl::primitive<doxid-structdnnl_1_1primitive>`
+	{
+		// structs
+	
+		struct :ref:`desc<doxid-structdnnl_1_1inner__product__backward__weights_1_1desc>`;
+		struct :ref:`primitive_desc<doxid-structdnnl_1_1inner__product__backward__weights_1_1primitive__desc>`;
+
+		// methods
+	
+		:ref:`inner_product_backward_weights<doxid-structdnnl_1_1inner__product__backward__weights_1ad7d930bf963f5168225c89dd07383d73>`();
+		:ref:`inner_product_backward_weights<doxid-structdnnl_1_1inner__product__backward__weights_1a5f050012a7044d8cb694dbd1382ba3ae>`(const :ref:`primitive_desc<doxid-structdnnl_1_1inner__product__backward__weights_1_1primitive__desc>`& pd);
+	};
+
+Inherited Members
+-----------------
+
+.. ref-code-block:: cpp
+	:class: doxyrest-overview-inherited-code-block
+
+	public:
+		// enums
+	
+		enum :ref:`kind<doxid-structdnnl_1_1primitive_1ad1ec93215a0cf3aa0a32bae0c2cd9169>`;
+
+		// methods
+	
+		:ref:`handle<doxid-structdnnl_1_1handle_1a5c631f7e5e4c92a13edb8e3422d3a973>`();
+		:ref:`handle<doxid-structdnnl_1_1handle_1a022001b5b9c8940a1326a02b61fc4860>`(const :ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&);
+		:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>& :ref:`operator =<doxid-structdnnl_1_1handle_1a4ad1ff54e4aafeb560a869c49aa20b52>` (const :ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&);
+		:ref:`handle<doxid-structdnnl_1_1handle_1aa13f3ecf4db240717074814412c7e70c>`(:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&&);
+		:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>& :ref:`operator =<doxid-structdnnl_1_1handle_1af3f85524f3d83abdd4917b46ce23e727>` (:ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>&&);
+		:ref:`handle<doxid-structdnnl_1_1handle_1a9c408c09fce1278f5cb0d1fa9818fc86>`(T t, bool weak = false);
+		void :ref:`reset<doxid-structdnnl_1_1handle_1a8862ef3d31c3b19bd88395e0b1373909>`(T t, bool weak = false);
+		T :ref:`get<doxid-structdnnl_1_1handle_1affb19aaf768579eebdf885edbbef7d7a>`(bool allow_empty = false) const;
+		:ref:`operator T<doxid-structdnnl_1_1handle_1ab3560c3d12724f48e9fdbe47077ff342>` () const;
+		:ref:`operator bool<doxid-structdnnl_1_1handle_1af014b68c14db64b9bb6a2034fe04440e>` () const;
+		bool :ref:`operator ==<doxid-structdnnl_1_1handle_1a8569ba9d1b62264df858f3b3316577c6>` (const :ref:`handle<doxid-structdnnl_1_1handle>`<T, traits>& other) const;
+		bool :ref:`operator !=<doxid-structdnnl_1_1handle_1a4aaa512672b0ed203ef78be4ceac025e>` (const :ref:`handle<doxid-structdnnl_1_1handle>`& other) const;
+		:ref:`primitive<doxid-structdnnl_1_1primitive_1a4ba1e667dfc4d3abda8fa47e8bc8bbdb>`();
+		:ref:`primitive<doxid-structdnnl_1_1primitive_1add43d05c97c3cd96a5d7cab07d6935f4>`(:ref:`const_dnnl_primitive_desc_t<doxid-group__dnnl__api__primitives__common_1gad48db8dee6ec426d067597ff7af232ee>` c_pd);
+		:ref:`primitive<doxid-structdnnl_1_1primitive_1ac356cacc1b41b95397d2c6a8c091e700>`(const :ref:`primitive_desc<doxid-structdnnl_1_1primitive__desc>`& pd);
+		:ref:`const_dnnl_primitive_desc_t<doxid-group__dnnl__api__primitives__common_1gad48db8dee6ec426d067597ff7af232ee>` :ref:`get_primitive_desc<doxid-group__dnnl__api__primitives__common_1ga1fa3eca53abce941ace7d28f9af1ec61>`() const;
+		:ref:`kind<doxid-structdnnl_1_1primitive_1ad1ec93215a0cf3aa0a32bae0c2cd9169>` :ref:`get_kind<doxid-group__dnnl__api__primitives__common_1ga30c28d0cebe5b1d4758af2c24fafbdfb>`() const;
+		void :ref:`execute<doxid-structdnnl_1_1primitive_1a18a484f0f1fecbc6a58fca1a58f6d8d4>`(const :ref:`stream<doxid-structdnnl_1_1stream>`& astream, const std::unordered_map<int, :ref:`memory<doxid-structdnnl_1_1memory>`>& args) const;
+
+.. _details-structdnnl_1_1inner__product__backward__weights:
+
+Detailed Documentation
+~~~~~~~~~~~~~~~~~~~~~~
+
+Inner product weights gradient primitive.
+
+Methods
+-------
+
+.. index:: pair: function; inner_product_backward_weights
+.. _doxid-structdnnl_1_1inner__product__backward__weights_1ad7d930bf963f5168225c89dd07383d73:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	inner_product_backward_weights()
+
+Default constructor. Produces an empty object.
+
+.. index:: pair: function; inner_product_backward_weights
+.. _doxid-structdnnl_1_1inner__product__backward__weights_1a5f050012a7044d8cb694dbd1382ba3ae:
+
+.. ref-code-block:: cpp
+	:class: doxyrest-title-code-block
+
+	inner_product_backward_weights(const :ref:`primitive_desc<doxid-structdnnl_1_1inner__product__backward__weights_1_1primitive__desc>`& pd)
+
+Constructs an inner product weights gradient primitive.
+
+
+
+.. rubric:: Parameters:
+
+.. list-table::
+	:widths: 20 80
+
+	*
+		- pd
+
+		- Primitive descriptor for an inner product weights gradient primitive.
+
