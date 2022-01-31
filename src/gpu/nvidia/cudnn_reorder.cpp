@@ -35,13 +35,15 @@ status_t cudnn_reorder_t::execute(const exec_ctx_t &ctx) const {
     return cuda_stream->interop_task([&](::sycl::handler &cgh) {
         auto *mem_src = static_cast<sycl::sycl_memory_storage_base_t *>(
                 &CTX_IN_STORAGE(DNNL_ARG_SRC));
-        auto src_acc = get_accessor<decltype(CTX_IN_ACCESSOR(DNNL_ARG_SRC))>(
-                mem_src, cgh);
+        auto src_acc
+                = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(DNNL_ARG_SRC))>(
+                        mem_src, cgh);
 
         auto *mem_dst = static_cast<sycl::sycl_memory_storage_base_t *>(
                 &CTX_OUT_STORAGE(DNNL_ARG_DST));
-        auto dst_acc = get_accessor<decltype(CTX_OUT_ACCESSOR(DNNL_ARG_DST))>(
-                mem_src, cgh);
+        auto dst_acc
+                = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(DNNL_ARG_DST))>(
+                        mem_dst, cgh);
 
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             auto &sycl_engine = *utils::downcast<sycl_cuda_engine_t *>(
@@ -49,13 +51,14 @@ status_t cudnn_reorder_t::execute(const exec_ctx_t &ctx) const {
             auto sc = cuda_sycl_scoped_context_handler_t(sycl_engine);
             auto handle = cuda_stream->get_cudnn_handle();
 
-            void *dst_ = get_ptr(sc, ih, dst_acc, mem_dst);
-            void *src_ = get_ptr(sc, ih, src_acc, mem_src);
+            void *src_ = get_cudnn_ptr(sc, ih, src_acc, mem_src);
+            void *dst_ = get_cudnn_ptr(sc, ih, dst_acc, mem_dst);
 
             auto a = static_cast<uint8_t *>(src_)
                     + pd()->reorder_->src_offset_in_bytes();
             auto b = static_cast<uint8_t *>(dst_)
                     + pd()->reorder_->dst_offset_in_bytes();
+
             pd()->reorder_->execute(handle, a, b);
         });
     });
