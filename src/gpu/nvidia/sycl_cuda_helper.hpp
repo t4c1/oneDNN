@@ -28,7 +28,7 @@ namespace gpu {
 namespace nvidia {
 
 template <typename T_acc>
-inline std::optional<T_acc> get_accessor(
+inline std::optional<T_acc> get_cudnn_accessor(
         sycl::sycl_memory_storage_base_t *mem, ::sycl::handler &cgh) {
     std::optional<T_acc> acc;
     if (mem->memory_kind() == sycl::memory_kind::buffer) {
@@ -40,7 +40,7 @@ inline std::optional<T_acc> get_accessor(
 }
 
 template <typename T_acc>
-inline void *get_ptr(cuda_sycl_scoped_context_handler_t &sc,
+inline void *get_cudnn_ptr(cuda_sycl_scoped_context_handler_t &sc,
         const compat::interop_handle &ih, const std::optional<T_acc> &acc,
         sycl::sycl_memory_storage_base_t *mem) {
     void *ptr;
