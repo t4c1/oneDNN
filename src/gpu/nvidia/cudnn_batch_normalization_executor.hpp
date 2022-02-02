@@ -68,14 +68,17 @@ protected:
             std::optional<write_acc_t> mean_acc,
             sycl::sycl_memory_storage_base_t *mean_mem,
             std::optional<write_acc_t> var_acc,
-            sycl::sycl_memory_storage_base_t *var_mem, float_acc_t scale_acc,
-            sycl::sycl_memory_storage_base_t *scale_mem,
+            sycl::sycl_memory_storage_base_t *var_mem,
+            float_acc_t scale_bias_acc,
+            sycl::sycl_memory_storage_base_t *scale_bias_mem,
             std::optional<write_acc_t> wkspace_acc,
             sycl::sycl_memory_storage_base_t *wkspace_mem, bool init_ss,
             bool init_mean_var) const {
 
         maybe_init_mean_var(cuda_stream, mean_acc, var_acc, init_mean_var);
-        // maybe_init_ss(cuda_stream, scale_acc, bias_acc, init_ss); TODO this needs to be modified 
+        maybe_init_ss(cuda_stream, scale_bias_acc, scale_bias_mem,
+                bnorm_impl->C(),
+                init_ss); // TODO this needs to be rewritten
 
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             auto &sycl_engine = *utils::downcast<sycl_cuda_engine_t *>(engine);
@@ -93,7 +96,7 @@ protected:
                     : nullptr;
 
             auto scale = static_cast<float *>(
-                    get_cudnn_ptr(sc, ih, scale_acc, scale_mem));
+                    get_cudnn_ptr(sc, ih, scale_bias_acc, scale_bias_mem));
             auto bias = scale + bnorm_impl->C();
             uint8_t *y_prime = nullptr, *save_mean = nullptr,
                     *save_var = nullptr;
@@ -137,7 +140,10 @@ protected:
                     sycl::compat::target_device>>
                     temp_relu_output,
             bool init_ss, bool init_mean_var) const {
-        //maybe_init_ss(cuda_stream, scale_bias_acc, bias_acc, init_ss); TODO this needs to be rewritten
+
+        maybe_init_ss(cuda_stream, scale_bias_acc, scale_bias_mem,
+                bnorm_impl->C(),
+                init_ss); // TODO this needs to be rewritten
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             auto &sycl_engine = *utils::downcast<sycl_cuda_engine_t *>(engine);
             auto sc = cuda_sycl_scoped_context_handler_t(sycl_engine);
@@ -171,23 +177,56 @@ protected:
     }
 
     template <typename T>
-    void maybe_init_ss(
-            nvidia::sycl_cuda_stream_t *cuda_stream, T, T, bool) const {}
+    void maybe_init_ss(nvidia::sycl_cuda_stream_t *cuda_stream, T,
+            sycl::sycl_memory_storage_base_t *, size_t, bool) const {}
 
     template <typename T>
     void maybe_init_ss(nvidia::sycl_cuda_stream_t *cuda_stream,
-            ::sycl::accessor<T, 1, ::sycl::access::mode::write> scale_acc,
-            ::sycl::accessor<T, 1, ::sycl::access::mode::write> bias_acc,
+            std::optional<::sycl::accessor<T, 1, ::sycl::access::mode::write>>
+                    scale_bias_acc,
+            sycl::sycl_memory_storage_base_t *scale_bias_mem, size_t n,
             bool init_ss) const {
         if (init_ss) {
+            T *scale_ptr, *bias_ptr;
             constexpr T scale_val = 1, bias_val = 0;
-            cuda_stream->interop_task([&](::sycl::handler &cgh) {
-                cgh.fill(scale_acc, scale_val);
-            });
+            if (!scale_bias_mem
+                    || scale_bias_mem->memory_kind()
+                            == sycl::memory_kind::buffer) {
 
-            cuda_stream->interop_task([&](::sycl::handler &cgh) {
-                cgh.fill(bias_acc, bias_val);
-            });
+                cuda_stream->interop_task([&](::sycl::handler &cgh) {
+                    scale_ptr = static_cast<T *>(
+                            scale_bias_acc.value().get_pointer());
+                    cgh.fill(scale_ptr, scale_val, n);
+                });
+                cuda_stream->interop_task([&](::sycl::handler &cgh) {
+                    bias_ptr = static_cast<T *>(
+                                       scale_bias_acc.value().get_pointer())
+                            + n;
+                    cgh.fill(bias_ptr, bias_val, n);
+                });
+
+            } else if (scale_bias_mem->memory_kind()
+                    == sycl::memory_kind::usm) {
+
+                cuda_stream->interop_task([&](::sycl::handler &cgh) {
+                    scale_ptr = static_cast<T *>(
+                            utils::downcast<
+                                    const sycl::sycl_usm_memory_storage_t *>(
+                                    scale_bias_mem)
+                                    ->usm_ptr());
+                    cgh.fill(scale_ptr, scale_val, n);
+                });
+                cuda_stream->interop_task([&](::sycl::handler &cgh) {
+                    bias_ptr
+                            = static_cast<
+                                      T *>(utils::downcast<
+                                           const sycl::sycl_usm_memory_storage_t
+                                                   *>(scale_bias_mem)
+                                                   ->usm_ptr())
+                            + n;
+                    cgh.fill(bias_ptr, bias_val, n);
+                });
+            }
         }
     }
 
@@ -303,8 +342,8 @@ struct bnorm_exec_fwd_inf_ss_t : public bnorm_exec_base_t {
 
             interop_task_fwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, dst_acc, dst_mem, nullptr_acc, nullptr,
-                    nullptr_acc, nullptr, scale_bias_acc, scale_bias_mem, wkspace_acc,
-                    wkspace_mem, init_ss, init_mean_var);
+                    nullptr_acc, nullptr, scale_bias_acc, scale_bias_mem,
+                    wkspace_acc, wkspace_mem, init_ss, init_mean_var);
         });
     }
 };
@@ -577,9 +616,9 @@ struct bnorm_exec_bwd_t : public bnorm_exec_base_t {
 
             interop_task_bwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, diff_dst_acc, diff_dst_mem, diff_src_acc,
-                    diff_src_mem, scale_bias_acc, scale_bias_mem, diff_scale_bias_acc,
-                    diff_scale_bias_mem, wkspace_acc, wkspace_mem,
-                    temp_relu_output, init_ss, init_mean_var);
+                    diff_src_mem, scale_bias_acc, scale_bias_mem,
+                    diff_scale_bias_acc, diff_scale_bias_mem, wkspace_acc,
+                    wkspace_mem, temp_relu_output, init_ss, init_mean_var);
         });
     }
 };
@@ -637,11 +676,10 @@ struct bnorm_exec_bwd_dw_ss_t : public bnorm_exec_base_t {
                         CTX_SCRATCH_ACCESSOR(memory_tracking::names::key_none));
             }
             interop_task_bwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
-                             src_mem, diff_dst_acc, diff_dst_mem, diff_src_acc,
-                             diff_src_mem, scale_bias_acc, scale_bias_mem,
-                             diff_scale_bias_acc, diff_scale_bias_mem,
-                             wkspace_acc, wkspace_mem, temp_relu_output,
-                             init_ss, init_mean_var);
+                    src_mem, diff_dst_acc, diff_dst_mem, diff_src_acc,
+                    diff_src_mem, scale_bias_acc, scale_bias_mem,
+                    diff_scale_bias_acc, diff_scale_bias_mem, wkspace_acc,
+                    wkspace_mem, temp_relu_output, init_ss, init_mean_var);
         });
     }
 };
