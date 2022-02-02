@@ -69,13 +69,14 @@ protected:
             sycl::sycl_memory_storage_base_t *mean_mem,
             std::optional<write_acc_t> var_acc,
             sycl::sycl_memory_storage_base_t *var_mem, float_acc_t scale_acc,
-            float_acc_t bias_acc, std::optional<write_acc_t> wkspace_acc,
+            sycl::sycl_memory_storage_base_t *scale_mem,
+            std::optional<write_acc_t> wkspace_acc,
             sycl::sycl_memory_storage_base_t *wkspace_mem, bool init_ss,
             bool init_mean_var) const {
 
         maybe_init_mean_var(cuda_stream, mean_acc, var_acc, init_mean_var);
-        maybe_init_ss(cuda_stream, scale_acc, bias_acc, init_ss);
-        
+        // maybe_init_ss(cuda_stream, scale_acc, bias_acc, init_ss); TODO this needs to be modified 
+
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             auto &sycl_engine = *utils::downcast<sycl_cuda_engine_t *>(engine);
             auto sc = cuda_sycl_scoped_context_handler_t(sycl_engine);
@@ -90,23 +91,21 @@ protected:
             auto var = (var_mem || var_acc.has_value())
                     ? get_cudnn_ptr(sc, ih, var_acc, var_mem)
                     : nullptr;
-            fprintf(stderr,
-                    "var_mem %p, mean_mem %p\n\n",
-                    mean_mem, var_mem);
 
-            auto scale = sc.memory<float *>(ih, scale_acc);
-            auto bias = sc.memory<float *>(ih, bias_acc) + bnorm_impl->C();
+            auto scale = static_cast<float *>(
+                    get_cudnn_ptr(sc, ih, scale_acc, scale_mem));
+            auto bias = scale + bnorm_impl->C();
             uint8_t *y_prime = nullptr, *save_mean = nullptr,
                     *save_var = nullptr;
-            save_mean = static_cast<uint8_t *>(
-                    get_cudnn_ptr(sc, ih, wkspace_acc, wkspace_mem));
-            //if (wkspace_mem->memory_kind() == sycl::memory_kind::usm)
-            save_var = save_mean + bnorm_impl->mean_var_size_bytes();
-            y_prime = save_var + bnorm_impl->mean_var_size_bytes();
+            if (!wkspace_mem->is_null()) {
+                save_mean = static_cast<uint8_t *>(
+                        get_cudnn_ptr(sc, ih, wkspace_acc, wkspace_mem));
+                save_var = save_mean + bnorm_impl->mean_var_size_bytes();
+                y_prime = save_var + bnorm_impl->mean_var_size_bytes();
+            }
 
-            fprintf(stderr,
-                    "Using pointers: x %p, y %p, mean %p, var %p, scale %p, "
-                    "bias %p, y_prime %p, save_mean %p, save_var %p\n\n",
+            printf("Using pointers: x %p, y %p, mean %p, var %p, scale %p, "
+                   "bias %p, y_prime %p, save_mean %p, save_var %p\n\n",
                     x, y, mean, var, scale, bias, y_prime, save_mean, save_var);
             std::shared_ptr<bnorm_args_t> args(new bnorm_fwd_args_t(x, y, mean,
                     var, scale, bias, y_prime, save_mean, save_var));
@@ -126,8 +125,11 @@ protected:
             std::optional<read_acc_t> diff_dst_acc,
             sycl::sycl_memory_storage_base_t *diff_dst_mem,
             std::optional<write_acc_t> diff_src_acc,
-            sycl::sycl_memory_storage_base_t *diff_src_mem, ss_acc_t scale_acc,
-            ss_acc_t bias_acc, d_ss_acc_t diff_scaleshift_acc,
+            sycl::sycl_memory_storage_base_t *diff_src_mem,
+            ss_acc_t scale_bias_acc,
+            sycl::sycl_memory_storage_base_t *scale_bias_mem,
+            d_ss_acc_t diff_scale_bias_acc,
+            sycl::sycl_memory_storage_base_t *diff_scale_bias_mem,
             std::optional<read_acc_t> wkspace_acc,
             sycl::sycl_memory_storage_base_t *wkspace_mem,
             std::shared_ptr<::sycl::accessor<uint8_t, 1,
@@ -135,7 +137,7 @@ protected:
                     sycl::compat::target_device>>
                     temp_relu_output,
             bool init_ss, bool init_mean_var) const {
-        //maybe_init_ss(cuda_stream, scale_acc, bias_acc, init_ss);
+        //maybe_init_ss(cuda_stream, scale_bias_acc, bias_acc, init_ss); TODO this needs to be rewritten
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             auto &sycl_engine = *utils::downcast<sycl_cuda_engine_t *>(engine);
             auto sc = cuda_sycl_scoped_context_handler_t(sycl_engine);
@@ -144,11 +146,15 @@ protected:
             auto x = get_cudnn_ptr(sc, ih, src_acc, src_mem);
             auto dy = get_cudnn_ptr(sc, ih, diff_dst_acc, diff_dst_mem);
             auto dx = get_cudnn_ptr(sc, ih, diff_src_acc, diff_src_mem);
-            auto scale = sc.memory<uint8_t *>(ih, scale_acc);
-            auto bias = sc.memory<uint8_t *>(ih, bias_acc)
-                    + (bnorm_impl->C() * sizeof(float));
-            auto diff_scale = sc.memory<uint8_t *>(ih, diff_scaleshift_acc);
+
+            auto scale = static_cast<uint8_t *>(
+                    get_cudnn_ptr(sc, ih, scale_bias_acc, scale_bias_mem));
+            auto bias = scale + bnorm_impl->C() * sizeof(float);
+
+            auto diff_scale = static_cast<uint8_t *>(get_cudnn_ptr(
+                    sc, ih, diff_scale_bias_acc, diff_scale_bias_mem));
             auto diff_bias = diff_scale + (bnorm_impl->C() * sizeof(float));
+
             auto save_mean = static_cast<uint8_t *>(
                     get_cudnn_ptr(sc, ih, wkspace_acc, wkspace_mem));
             auto save_var = save_mean + bnorm_impl->mean_var_size_bytes();
@@ -215,7 +221,7 @@ struct bnorm_exec_fwd_inf_t : public bnorm_exec_base_t {
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
         auto n_channels = bnorm_impl->C();
-        ::sycl::buffer<float> scaleshift_buff(n_channels * 2);
+        ::sycl::buffer<float> scale_bias_buff(n_channels * 2);
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
             auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
                     &CTX_IN_STORAGE(DNNL_ARG_SRC));
@@ -236,12 +242,12 @@ struct bnorm_exec_fwd_inf_t : public bnorm_exec_base_t {
                 wkspace_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                         DNNL_ARG_WORKSPACE))>(wkspace_mem, cgh);
             }
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, n_channels);
+
+            sycl::sycl_memory_storage_base_t *scale_bias_mem = nullptr;
+            auto scale_bias_acc = std::optional(
+                    scale_bias_buff.get_access<::sycl::access::mode::write>(
+                            cgh));
+
             bool init_ss = true, init_mean_var = false;
 
             auto nullptr_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
@@ -249,8 +255,8 @@ struct bnorm_exec_fwd_inf_t : public bnorm_exec_base_t {
 
             interop_task_fwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, dst_acc, dst_mem, nullptr_acc, nullptr,
-                    nullptr_acc, nullptr, scale_acc, bias_acc, wkspace_acc,
-                    wkspace_mem, init_ss, init_mean_var);
+                    nullptr_acc, nullptr, scale_bias_acc, scale_bias_mem,
+                    wkspace_acc, wkspace_mem, init_ss, init_mean_var);
         });
     }
 };
@@ -262,10 +268,6 @@ struct bnorm_exec_fwd_inf_ss_t : public bnorm_exec_base_t {
         nvidia::sycl_cuda_stream_t *cuda_stream
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
-        auto scaleshift_buff
-                = utils::downcast<sycl::sycl_buffer_memory_storage_t *>(
-                        &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT))
-                          ->buffer();
         auto n_channels = bnorm_impl->C();
 
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
@@ -288,12 +290,12 @@ struct bnorm_exec_fwd_inf_ss_t : public bnorm_exec_base_t {
                 wkspace_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                         DNNL_ARG_WORKSPACE))>(wkspace_mem, cgh);
             }
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, n_channels);
+            auto *scale_bias_mem
+                    = static_cast<sycl::sycl_buffer_memory_storage_t *>(
+                            &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT));
+            auto scale_bias_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
+                    DNNL_ARG_SCALE_SHIFT))>(scale_bias_mem, cgh);
+
             bool init_ss = false, init_mean_var = false;
 
             auto nullptr_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
@@ -301,7 +303,7 @@ struct bnorm_exec_fwd_inf_ss_t : public bnorm_exec_base_t {
 
             interop_task_fwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, dst_acc, dst_mem, nullptr_acc, nullptr,
-                    nullptr_acc, nullptr, scale_acc, bias_acc, wkspace_acc,
+                    nullptr_acc, nullptr, scale_bias_acc, scale_bias_mem, wkspace_acc,
                     wkspace_mem, init_ss, init_mean_var);
         });
     }
@@ -314,7 +316,7 @@ struct bnorm_exec_fwd_inf_stats_t : public bnorm_exec_base_t {
         nvidia::sycl_cuda_stream_t *cuda_stream
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
         auto n_channels = bnorm_impl->C();
-        ::sycl::buffer<float> scaleshift_buff(n_channels * 2);
+        ::sycl::buffer<float> scale_bias_buff(n_channels * 2);
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
             auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
                     &CTX_IN_STORAGE(DNNL_ARG_SRC));
@@ -343,12 +345,12 @@ struct bnorm_exec_fwd_inf_stats_t : public bnorm_exec_base_t {
                     &CTX_OUT_STORAGE(DNNL_ARG_VARIANCE));
             auto var_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                     DNNL_ARG_VARIANCE))>(var_mem, cgh);
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, n_channels);
+
+            sycl::sycl_memory_storage_base_t *scale_bias_mem = nullptr;
+            auto scale_bias_acc = std::optional(
+                    scale_bias_buff.get_access<::sycl::access::mode::write>(
+                            cgh));
+
             bool init_ss = true, init_mean_var = false;
 
             auto nullptr_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
@@ -356,8 +358,8 @@ struct bnorm_exec_fwd_inf_stats_t : public bnorm_exec_base_t {
 
             interop_task_fwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, dst_acc, dst_mem, nullptr_acc, nullptr,
-                    nullptr_acc, nullptr, scale_acc, bias_acc, wkspace_acc,
-                    wkspace_mem, init_ss, init_mean_var);
+                    nullptr_acc, nullptr, scale_bias_acc, scale_bias_mem,
+                    wkspace_acc, wkspace_mem, init_ss, init_mean_var);
         });
     }
 };
@@ -368,10 +370,6 @@ struct bnorm_exec_fwd_inf_ss_stats_t : public bnorm_exec_base_t {
             const override {
         nvidia::sycl_cuda_stream_t *cuda_stream
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
-        auto scaleshift_buff
-                = utils::downcast<sycl::sycl_buffer_memory_storage_t *>(
-                        &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT))
-                          ->buffer();
         auto n_channels = bnorm_impl->C();
 
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
@@ -402,18 +400,18 @@ struct bnorm_exec_fwd_inf_ss_stats_t : public bnorm_exec_base_t {
                     &CTX_OUT_STORAGE(DNNL_ARG_VARIANCE));
             auto var_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                     DNNL_ARG_VARIANCE))>(var_mem, cgh);
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, n_channels);
+            auto *scale_bias_mem
+                    = static_cast<sycl::sycl_buffer_memory_storage_t *>(
+                            &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT));
+            auto scale_bias_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
+                    DNNL_ARG_SCALE_SHIFT))>(scale_bias_mem, cgh);
+
             bool init_ss = false, init_mean_var = false;
 
             interop_task_fwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, dst_acc, dst_mem, mean_acc, mean_mem, var_acc,
-                    var_mem, scale_acc, bias_acc, wkspace_acc, wkspace_mem,
-                    init_ss, init_mean_var);
+                    var_mem, scale_bias_acc, scale_bias_mem, wkspace_acc,
+                    wkspace_mem, init_ss, init_mean_var);
         });
     }
 };
@@ -427,7 +425,7 @@ struct bnorm_exec_fwd_t : public bnorm_exec_base_t {
 
         auto n_channels = bnorm_impl->C();
 
-        ::sycl::buffer<float> scaleshift_buff(n_channels * 2);
+        ::sycl::buffer<float> scale_bias_buff(n_channels * 2);
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
             auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
                     &CTX_IN_STORAGE(DNNL_ARG_SRC));
@@ -456,18 +454,17 @@ struct bnorm_exec_fwd_t : public bnorm_exec_base_t {
                     &CTX_OUT_STORAGE(DNNL_ARG_VARIANCE));
             auto var_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                     DNNL_ARG_VARIANCE))>(var_mem, cgh);
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, n_channels);
+
+            sycl::sycl_memory_storage_base_t *scale_bias_mem = nullptr;
+            auto scale_bias_acc = std::optional(
+                    scale_bias_buff.get_access<::sycl::access::mode::write>(
+                            cgh));
             bool init_ss = true, init_mean_var = true;
 
             interop_task_fwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, dst_acc, dst_mem, mean_acc, mean_mem, var_acc,
-                    var_mem, scale_acc, bias_acc, wkspace_acc, wkspace_mem,
-                    init_ss, init_mean_var);
+                    var_mem, scale_bias_acc, scale_bias_mem, wkspace_acc,
+                    wkspace_mem, init_ss, init_mean_var);
         });
     }
 };
@@ -479,10 +476,6 @@ struct bnorm_exec_fwd_ss_t : public bnorm_exec_base_t {
         nvidia::sycl_cuda_stream_t *cuda_stream
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
-        auto scaleshift_buff
-                = utils::downcast<sycl::sycl_buffer_memory_storage_t *>(
-                        &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT))
-                          ->buffer();
         auto n_channels = bnorm_impl->C();
 
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
@@ -513,18 +506,18 @@ struct bnorm_exec_fwd_ss_t : public bnorm_exec_base_t {
                     &CTX_OUT_STORAGE(DNNL_ARG_VARIANCE));
             auto var_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                     DNNL_ARG_VARIANCE))>(var_mem, cgh);
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, n_channels);
+            auto *scale_bias_mem
+                    = static_cast<sycl::sycl_buffer_memory_storage_t *>(
+                            &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT));
+            auto scale_bias_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
+                    DNNL_ARG_SCALE_SHIFT))>(scale_bias_mem, cgh);
+
             bool init_ss = false, init_mean_var = true;
 
             interop_task_fwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, dst_acc, dst_mem, mean_acc, mean_mem, var_acc,
-                    var_mem, scale_acc, bias_acc, wkspace_acc, wkspace_mem,
-                    init_ss, init_mean_var);
+                    var_mem, scale_bias_acc, scale_bias_mem, wkspace_acc,
+                    wkspace_mem, init_ss, init_mean_var);
         });
     }
 };
@@ -537,8 +530,8 @@ struct bnorm_exec_bwd_t : public bnorm_exec_base_t {
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
         auto n_channels = bnorm_impl->C();
-        ::sycl::buffer<float> scaleshift_buff(n_channels * 2);
-        ::sycl::buffer<float> diff_scaleshift_buff(n_channels * 2);
+        ::sycl::buffer<float> scale_bias_buff(n_channels * 2);
+        ::sycl::buffer<float> diff_scale_buff(n_channels * 2);
 
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
             auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
@@ -559,15 +552,16 @@ struct bnorm_exec_bwd_t : public bnorm_exec_base_t {
                     &CTX_IN_STORAGE(DNNL_ARG_WORKSPACE));
             auto wkspace_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
                     DNNL_ARG_WORKSPACE))>(wkspace_mem, cgh);
-            auto diff_scaleshift_acc
-                    = diff_scaleshift_buff
-                              .get_access<::sycl::access::mode::read>(cgh);
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::write>(
-                            cgh, n_channels, n_channels);
+
+            sycl::sycl_memory_storage_base_t *scale_bias_mem = nullptr;
+            auto scale_bias_acc = std::optional(
+                    scale_bias_buff.get_access<::sycl::access::mode::write>(
+                            cgh));
+            sycl::sycl_memory_storage_base_t *diff_scale_bias_mem = nullptr;
+            auto diff_scale_bias_acc = std::optional(
+                    scale_bias_buff.get_access<::sycl::access::mode::write>(
+                            cgh));
+
             bool init_ss = true, init_mean_var = false;
 
             std::shared_ptr<::sycl::accessor<uint8_t, 1,
@@ -583,9 +577,9 @@ struct bnorm_exec_bwd_t : public bnorm_exec_base_t {
 
             interop_task_bwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, diff_dst_acc, diff_dst_mem, diff_src_acc,
-                    diff_src_mem, scale_acc, bias_acc, diff_scaleshift_acc,
-                    wkspace_acc, wkspace_mem, temp_relu_output, init_ss,
-                    init_mean_var);
+                    diff_src_mem, scale_bias_acc, scale_bias_mem, diff_scale_bias_acc,
+                    diff_scale_bias_mem, wkspace_acc, wkspace_mem,
+                    temp_relu_output, init_ss, init_mean_var);
         });
     }
 };
@@ -597,11 +591,6 @@ struct bnorm_exec_bwd_dw_ss_t : public bnorm_exec_base_t {
         nvidia::sycl_cuda_stream_t *cuda_stream
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
-        auto scaleshift_buff
-                = utils::downcast<sycl::sycl_buffer_memory_storage_t *>(
-                        &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT))
-                          ->buffer();
-
         auto n_channels = bnorm_impl->C();
 
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
@@ -619,14 +608,18 @@ struct bnorm_exec_bwd_dw_ss_t : public bnorm_exec_base_t {
                             &CTX_OUT_STORAGE(DNNL_ARG_DIFF_SRC));
             auto diff_src_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                     DNNL_ARG_DIFF_SRC))>(diff_src_mem, cgh);
-            auto diff_scaleshift_acc
-                    = CTX_OUT_ACCESSOR(DNNL_ARG_DIFF_SCALE_SHIFT);
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, n_channels);
+            auto *scale_bias_mem
+                    = static_cast<sycl::sycl_buffer_memory_storage_t *>(
+                            &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT));
+            auto scale_bias_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
+                    DNNL_ARG_SCALE_SHIFT))>(scale_bias_mem, cgh);
+            auto *diff_scale_bias_mem
+                    = static_cast<sycl::sycl_buffer_memory_storage_t *>(
+                            &CTX_OUT_STORAGE(DNNL_ARG_DIFF_SCALE_SHIFT));
+            auto diff_scale_bias_acc
+                    = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
+                            DNNL_ARG_DIFF_SCALE_SHIFT))>(
+                            diff_scale_bias_mem, cgh);
             auto *wkspace_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
                     &CTX_IN_STORAGE(DNNL_ARG_WORKSPACE));
             auto wkspace_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
@@ -644,10 +637,11 @@ struct bnorm_exec_bwd_dw_ss_t : public bnorm_exec_base_t {
                         CTX_SCRATCH_ACCESSOR(memory_tracking::names::key_none));
             }
             interop_task_bwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
-                    src_mem, diff_dst_acc, diff_dst_mem, diff_src_acc,
-                    diff_src_mem, scale_acc, bias_acc, diff_scaleshift_acc,
-                    wkspace_acc, wkspace_mem, temp_relu_output, init_ss,
-                    init_mean_var);
+                             src_mem, diff_dst_acc, diff_dst_mem, diff_src_acc,
+                             diff_src_mem, scale_bias_acc, scale_bias_mem,
+                             diff_scale_bias_acc, diff_scale_bias_mem,
+                             wkspace_acc, wkspace_mem, temp_relu_output,
+                             init_ss, init_mean_var);
         });
     }
 };
@@ -659,13 +653,9 @@ struct bnorm_exec_bwd_d_ss_t : public bnorm_exec_base_t {
         nvidia::sycl_cuda_stream_t *cuda_stream
                 = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
-        auto scaleshift_buff
-                = utils::downcast<sycl::sycl_buffer_memory_storage_t *>(
-                        &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT))
-                          ->buffer();
         auto n_channels = bnorm_impl->C();
+        ::sycl::buffer<float> diff_scale_bias_buff(n_channels * 2);
 
-        ::sycl::buffer<float> diff_scaleshift_buff(n_channels * 2);
         return cuda_stream->interop_task([&](::sycl::handler &cgh) {
             auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
                     &CTX_IN_STORAGE(DNNL_ARG_SRC));
@@ -681,15 +671,15 @@ struct bnorm_exec_bwd_d_ss_t : public bnorm_exec_base_t {
                             &CTX_OUT_STORAGE(DNNL_ARG_DIFF_SRC));
             auto diff_src_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
                     DNNL_ARG_DIFF_SRC))>(diff_src_mem, cgh);
-            auto scale_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, 0);
-            auto bias_acc
-                    = scaleshift_buff.get_access<::sycl::access::mode::read>(
-                            cgh, n_channels, n_channels);
-            auto diff_scaleshift_acc
-                    = diff_scaleshift_buff
-                              .get_access<::sycl::access::mode::read>(cgh);
+            auto *scale_bias_mem
+                    = static_cast<sycl::sycl_buffer_memory_storage_t *>(
+                            &CTX_IN_STORAGE(DNNL_ARG_SCALE_SHIFT));
+            auto scale_bias_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
+                    DNNL_ARG_SCALE_SHIFT))>(scale_bias_mem, cgh);
+            sycl::sycl_memory_storage_base_t *diff_scale_bias_mem = nullptr;
+            auto diff_scale_bias_acc = std::optional(
+                    diff_scale_bias_buff
+                            .get_access<::sycl::access::mode::write>(cgh));
             auto *wkspace_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
                     &CTX_IN_STORAGE(DNNL_ARG_WORKSPACE));
             auto wkspace_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
@@ -709,9 +699,9 @@ struct bnorm_exec_bwd_d_ss_t : public bnorm_exec_base_t {
 
             interop_task_bwd(bnorm_impl, engine, cgh, cuda_stream, src_acc,
                     src_mem, diff_dst_acc, diff_dst_mem, diff_src_acc,
-                    diff_src_mem, scale_acc, bias_acc, diff_scaleshift_acc,
-                    wkspace_acc, wkspace_mem, temp_relu_output, init_ss,
-                    init_mean_var);
+                    diff_src_mem, scale_bias_acc, scale_bias_mem,
+                    diff_scale_bias_acc, diff_scale_bias_mem, wkspace_acc,
+                    wkspace_mem, temp_relu_output, init_ss, init_mean_var);
         });
     }
 };
