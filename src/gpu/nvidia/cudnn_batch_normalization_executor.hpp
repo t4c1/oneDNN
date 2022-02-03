@@ -76,14 +76,18 @@ protected:
             bool init_mean_var) const {
 
         maybe_init_mean_var(cuda_stream, mean_acc, var_acc, init_mean_var);
+        /*
         maybe_init_ss(cuda_stream, scale_bias_acc, scale_bias_mem,
                 bnorm_impl->C(),
                 init_ss); // TODO this needs to be rewritten
-
+*/
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             auto &sycl_engine = *utils::downcast<sycl_cuda_engine_t *>(engine);
             auto sc = cuda_sycl_scoped_context_handler_t(sycl_engine);
             auto handle = cuda_stream->get_cudnn_handle();
+            
+            maybe_init_ss(sc, ih, cuda_stream, scale_bias_acc, scale_bias_mem,
+                bnorm_impl->C(), init_ss); // TODO this needs to be rewritten
 
             auto x = get_cudnn_ptr(sc, ih, src_acc, src_mem);
             auto y = get_cudnn_ptr(sc, ih, dst_acc, dst_mem);
@@ -98,6 +102,7 @@ protected:
             auto scale = static_cast<float *>(
                     get_cudnn_ptr(sc, ih, scale_bias_acc, scale_bias_mem));
             auto bias = scale + bnorm_impl->C();
+
             uint8_t *y_prime = nullptr, *save_mean = nullptr,
                     *save_var = nullptr;
             if (!wkspace_mem->is_null()) {
@@ -107,13 +112,25 @@ protected:
                 y_prime = save_var + bnorm_impl->mean_var_size_bytes();
             }
 
+            void * p1 = static_cast<void *>(scale);
+            void * p2 = static_cast<void *>(bias);
+
             printf("Using pointers: x %p, y %p, mean %p, var %p, scale %p, "
                    "bias %p, y_prime %p, save_mean %p, save_var %p\n\n",
-                    x, y, mean, var, scale, bias, y_prime, save_mean, save_var);
+                    x, y, mean, var, static_cast<void *>(scale), static_cast<void *>(bias), y_prime, save_mean, save_var);
             std::shared_ptr<bnorm_args_t> args(new bnorm_fwd_args_t(x, y, mean,
-                    var, scale, bias, y_prime, save_mean, save_var));
+                    var, p1, p2, y_prime, save_mean, save_var));
+            auto fwd_args = static_cast<bnorm_fwd_args_t *>(args.get());
+        printf( "FIRST TIME! "
+                "About to execute cudnnBatchNormalization!\nPointers: "
+                " x %p, y %p, fwd_args->scale_ %p, "
+                "fwd_args->bias_ %p, "
+                "fwd_args->mean_ %p, fwd_args->var_ %p\n\n",
+                fwd_args->x_, fwd_args->y_, fwd_args->scale_, fwd_args->bias_,
+                fwd_args->mean_, fwd_args->var_);
 
             bnorm_impl->execute(handle, args);
+            cudaDeviceSynchronize();
         });
     }
 
@@ -140,14 +157,19 @@ protected:
                     sycl::compat::target_device>>
                     temp_relu_output,
             bool init_ss, bool init_mean_var) const {
-
+/*
         maybe_init_ss(cuda_stream, scale_bias_acc, scale_bias_mem,
                 bnorm_impl->C(),
                 init_ss); // TODO this needs to be rewritten
+                */
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             auto &sycl_engine = *utils::downcast<sycl_cuda_engine_t *>(engine);
             auto sc = cuda_sycl_scoped_context_handler_t(sycl_engine);
             auto handle = cuda_stream->get_cudnn_handle();
+        
+            maybe_init_ss(sc, ih, cuda_stream, scale_bias_acc, scale_bias_mem,
+                bnorm_impl->C(),
+                init_ss); // TODO this needs to be rewritten
 
             auto x = get_cudnn_ptr(sc, ih, src_acc, src_mem);
             auto dy = get_cudnn_ptr(sc, ih, diff_dst_acc, diff_dst_mem);
@@ -177,11 +199,13 @@ protected:
     }
 
     template <typename T>
-    void maybe_init_ss(nvidia::sycl_cuda_stream_t *cuda_stream, T,
-            sycl::sycl_memory_storage_base_t *, size_t, bool) const {}
+    void maybe_init_ss(cuda_sycl_scoped_context_handler_t &sc, const compat::interop_handle &ih, nvidia::sycl_cuda_stream_t *cuda_stream, T,
+            sycl::sycl_memory_storage_base_t *, size_t, bool) const {
+        printf("NULL MAYBE INIT SS!!\n\n");
+    }
 
     template <typename T>
-    void maybe_init_ss(nvidia::sycl_cuda_stream_t *cuda_stream,
+    void maybe_init_ss(cuda_sycl_scoped_context_handler_t &sc, const compat::interop_handle &ih, nvidia::sycl_cuda_stream_t *cuda_stream,
             std::optional<::sycl::accessor<T, 1, ::sycl::access::mode::write>>
                     scale_bias_acc,
             sycl::sycl_memory_storage_base_t *scale_bias_mem, size_t n,
@@ -194,29 +218,23 @@ protected:
                             == sycl::memory_kind::buffer) {
 
                 cuda_stream->interop_task([&](::sycl::handler &cgh) {
-                    scale_ptr = static_cast<T *>(
-                            scale_bias_acc.value().get_pointer());
-                    cgh.fill(scale_ptr, scale_val, n);
+                    scale_ptr = sc.memory<T *>(ih, scale_bias_acc.value());
+                    printf("Scale ptr %p\n\n", scale_ptr);
+                    cudaMemset(static_cast<void *>(scale_ptr), scale_val, n*sizeof(T));
                 });
                 cuda_stream->interop_task([&](::sycl::handler &cgh) {
-                    bias_ptr = static_cast<T *>(
-                                       scale_bias_acc.value().get_pointer())
-                            + n;
-                    cgh.fill(bias_ptr, bias_val, n);
+                    bias_ptr = sc.memory<T *>(ih, scale_bias_acc.value()) + n;
+                    printf("Bias ptr %p\n\n", scale_ptr);
+                    cudaMemset(static_cast<void *>(bias_ptr), bias_val, n*sizeof(T));
                 });
 
             } else if (scale_bias_mem->memory_kind()
                     == sycl::memory_kind::usm) {
-
-                cuda_stream->interop_task([&](::sycl::handler &cgh) {
                     scale_ptr = static_cast<T *>(
                             utils::downcast<
                                     const sycl::sycl_usm_memory_storage_t *>(
                                     scale_bias_mem)
                                     ->usm_ptr());
-                    cgh.fill(scale_ptr, scale_val, n);
-                });
-                cuda_stream->interop_task([&](::sycl::handler &cgh) {
                     bias_ptr
                             = static_cast<
                                       T *>(utils::downcast<
@@ -224,8 +242,8 @@ protected:
                                                    *>(scale_bias_mem)
                                                    ->usm_ptr())
                             + n;
-                    cgh.fill(bias_ptr, bias_val, n);
-                });
+                    cuda_stream->queue().memset(scale_ptr, scale_val, n);
+                    cuda_stream->queue().memset(bias_ptr, bias_val, n);
             }
         }
     }
