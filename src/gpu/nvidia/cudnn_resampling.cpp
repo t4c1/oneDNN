@@ -21,6 +21,8 @@
 #include "gpu/nvidia/sycl_cuda_scoped_context.hpp"
 #include "gpu/nvidia/sycl_cuda_stream.hpp"
 
+#include "sycl_cuda_helper.hpp"
+
 namespace dnnl {
 namespace impl {
 namespace gpu {
@@ -34,8 +36,18 @@ status_t cudnn_resampling_fwd_t::execute(const exec_ctx_t &ctx) const {
             = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
     cuda_stream->interop_task([&](::sycl::handler &cgh) {
-        auto src_acc = CTX_IN_ACCESSOR(DNNL_ARG_SRC);
-        auto dst_acc = CTX_OUT_ACCESSOR(DNNL_ARG_DST);
+        // Enable USM for src, dst
+        auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
+                &CTX_IN_STORAGE(DNNL_ARG_SRC));
+        auto src_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(DNNL_ARG_SRC))>(
+                src_mem, cgh);
+
+        auto *dst_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
+                &CTX_OUT_STORAGE(DNNL_ARG_DST));
+        auto dst_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(DNNL_ARG_DST))>(
+                dst_mem, cgh);
+
+        // This buffer is not exposed to user so we don't need to enable USM
         auto grid_acc = buffer(grid_storage_.get())
                                 .get_access<::sycl::access::mode::read>(cgh);
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
@@ -45,9 +57,9 @@ status_t cudnn_resampling_fwd_t::execute(const exec_ctx_t &ctx) const {
             auto handle = cuda_stream->get_cudnn_handle();
             std::vector<void *> args;
 
-            args.push_back(sc.memory<void *>(ih, src_acc));
+            args.push_back(get_cudnn_ptr(sc, ih, src_acc, src_mem));
             args.push_back(sc.memory<void *>(ih, grid_acc));
-            args.push_back(sc.memory<void *>(ih, dst_acc));
+            args.push_back(get_cudnn_ptr(sc, ih, dst_acc, dst_mem));
 
             pd()->resampling_impl_->execute(handle, args);
         });
@@ -64,8 +76,16 @@ status_t cudnn_resampling_bwd_t::execute(const exec_ctx_t &ctx) const {
             = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
     cuda_stream->interop_task([&](::sycl::handler &cgh) {
-        auto diff_src_acc = CTX_OUT_ACCESSOR(DNNL_ARG_DIFF_SRC);
-        auto diff_dst_acc = CTX_IN_ACCESSOR(DNNL_ARG_DIFF_DST);
+        auto *diff_src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
+                &CTX_OUT_STORAGE(DNNL_ARG_DIFF_SRC));
+        auto diff_src_acc
+                = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(DNNL_ARG_DIFF_SRC))>(
+                        diff_src_mem, cgh);
+        auto *diff_dst_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
+                &CTX_IN_STORAGE(DNNL_ARG_DIFF_DST));
+        auto diff_dst_acc
+                = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(DNNL_ARG_DIFF_DST))>(
+                        diff_dst_mem, cgh);
         auto grid_acc = buffer(grid_storage_.get())
                                 .get_access<::sycl::access::mode::read>(cgh);
         auto diff_grid_acc
@@ -76,8 +96,8 @@ status_t cudnn_resampling_bwd_t::execute(const exec_ctx_t &ctx) const {
             auto sc = cuda_sycl_scoped_context_handler_t(sycl_engine);
             auto handle = cuda_stream->get_cudnn_handle();
             std::vector<void *> args;
-            args.push_back(sc.memory<void *>(ih, diff_src_acc));
-            args.push_back(sc.memory<void *>(ih, diff_dst_acc));
+            args.push_back(get_cudnn_ptr(sc, ih, diff_src_acc, diff_src_mem));
+            args.push_back(get_cudnn_ptr(sc, ih, diff_dst_acc, diff_dst_mem));
             args.push_back(sc.memory<void *>(ih, grid_acc));
             args.push_back(sc.memory<void *>(ih, diff_grid_acc));
 
