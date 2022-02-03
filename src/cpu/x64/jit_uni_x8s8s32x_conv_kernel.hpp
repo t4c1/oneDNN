@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -233,7 +233,7 @@ struct jit_uni_x8s8s32x_fwd_kernel {
     void (*jit_ker)(jit_conv_call_s *);
 
 private:
-    DNNL_DISALLOW_COPY_AND_ASSIGN(jit_uni_x8s8s32x_fwd_kernel<isa>);
+    DNNL_DISALLOW_COPY_AND_ASSIGN(jit_uni_x8s8s32x_fwd_kernel);
     jit_generator *kernel_;
 };
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -182,6 +182,7 @@ const gemm_recipe_t gemm_recipes[] = {
     {ngen::HW::XeHP, "HHH", "NTN", {}, 32, 16, "sb8 sb16 sb l4 cab1 wg 4x4 cs di", {}, {}},
     {ngen::HW::XeHP, "HHH", "TNN", {}, 16, 16, "su8 su32 sb l4 cab1 wg 4x4 cs di hi bk2048", {}, {}},
     {ngen::HW::XeHP, "HHH", "TNN", {}, 16,  8, "su32 su16 sb l4 cab1 wg 4x4 cs di", {}, {}},
+    {ngen::HW::XeHP, "HHH", "TNN", {}, 32,  1, "su8 sb32x2 sb wg 2x1x16 kr l4 cs di", {}, 'k'},
     {ngen::HW::XeHP, "HHH", "TTN", {}, 32, 32, "as4/1x2 ab4/1x2 ab l4 ca1 wg 2x8 cs nmk hi bk2048", {}, {}},
     {ngen::HW::XeHP, "OOI", "ABN", make_crosspack(4, 32), 32, 32, "ab16x3 ab16x3 ab fs sc bo bk4096", {}, {}},
     {ngen::HW::XeHP, "OOI", "ABN", make_crosspack(4, 32), 32, 48, "ab16 ab16 ab fs wg 4x4 bo bk8192", {}, 'A'},
@@ -192,6 +193,7 @@ const gemm_recipe_t gemm_recipes[] = {
     {ngen::HW::XeHP, "OOI", "NNN", {}, 16,  4, "sb16 su32x2 sb l4 ca1 wg 2x8 cs di", {}, {}},
     {ngen::HW::XeHP, "OOI", "NTN", {}, 32, 16, "sb8x2 sb8x2 sb l4 cab1 wg 4x4 cs di", {}, {}},
     {ngen::HW::XeHP, "OOI", "TNN", {}, 16, 16, "sb32 sb32 sb l4 cab1 wg 4x4 cs di", {}, {}},
+    {ngen::HW::XeHP, "OOI", "TNN", {}, 32,  1, "su16 sb64x2 sb wg 2x1x16 l4 cs kr", {}, 'k'},
     {ngen::HW::XeHP, "OOI", "TTN", {}, 16, 16, "sb32 sb32 sb l4 cab1 wg 4x4 cs di", {}, {}},
     {ngen::HW::XeHP, "HHH", "NNN", {}, 16,  4, "ab2x2 as8 ab l4 cs di", {}, {}},                        // DLRM
     {ngen::HW::XeHP, "HHH", "TNN", {}, 16,  8, "sb16 sb16 ab cab2 wg 2x4 cs pab", {}, {}},              // DLRM
@@ -202,6 +204,7 @@ const gemm_recipe_t gemm_recipes[] = {
     {ngen::HW::XeHP, "BBS", "NTN", {}, 16, 16, "sb1x4 sb1x4 sb l4 cs di nmk fn pab", {}, {}},           // DLRM
     {ngen::HW::XeHP, "BBS", "NTN", {},  8,  8, "sb4x2 sb4x2 ab cs di wg 2x2x16 kr kb bk64", {}, 'K'},   // DCRNN
     {ngen::HW::XeHP, "BBS", "TNN", {}, 32,  8, "sb16 sb16 ab ca2 wg 1x4 fn nmk cs pab", {}, {}},        // DLRM
+    {ngen::HW::XeHP, "BBS", "TNN", {}, 32,  4, "sb16 su16 sb l4 cab1 wg 2x8 cs di", {}, {}},            // DCRNN
     {ngen::HW::XeHP, "BBS", "TTN", {}, 8,  32, "sb16 sb16 as cab1 wg 4x4 cs pab", {}, {}},              // DLRM
     {ngen::HW::XeHP, "HHH", "NNN", {}, 32, 16, "ab16/8 as16 ab l4 cab1 wg 4x4 cs di", {}, 'A'},         // BERT
     {ngen::HW::XeHP, "HHH", "NNN", {}, 32, 16, "ab8 ab16 ab l4 ca1 wg 2x8 cs di", {}, 'B'},             // BERT

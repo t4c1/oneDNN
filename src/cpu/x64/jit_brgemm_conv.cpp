@@ -97,6 +97,11 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
         const auto DH = jcp_.dilate_h + 1;
         const auto KH = jcp_.kh;
         const auto IH = jcp_.ih;
+        const auto KD_BLOCK = jcp_.kd_block;
+        const auto KH_BLOCK = jcp_.kh_block;
+
+        assert(KD % KD_BLOCK == 0);
+        assert(KH % KH_BLOCK == 0);
 
         for_(int iod = 0; iod < jcp_.od; iod++)
         {
@@ -104,7 +109,7 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
             const int kd_s = div_up(max(0, -iid), DD);
             const int kd_f
                     = KD - div_up(max(0, iid - ID + (KD - 1) * DD + 1), DD);
-            const auto kd_l = kd_f - kd_s;
+            const auto kd_l = nstl::min(KD_BLOCK, kd_f - kd_s);
             for_(int ioh = 0; ioh < jcp_.oh; ioh += jcp_.oh_block)
             {
 
@@ -113,7 +118,7 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
                         = jcp_.is_os_blocking ? 0 : div_up(max(0, -iih), DH);
                 const auto kh_f
                         = KH - div_up(max(0, iih - IH + (KH - 1) * DH + 1), DH);
-                const auto kh_l = kh_f - kh_s;
+                const auto kh_l = nstl::min(KH_BLOCK, kh_f - kh_s);
                 const auto bs = kd_l * kh_l * jcp_.kw;
 
                 if (batchsizes[bs] == -1) {
@@ -217,6 +222,7 @@ status_t brgemm_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
                 brgemm_attr_t brgattr;
                 brgattr.use_uker = jcp_.use_uker;
                 brgattr.use_interleave_stores = jcp_.use_interleave_stores;
+                brgattr.hint_prefetching = jcp_.hint_prefetching;
                 brgattr.max_bs = bs;
                 brgattr.hint_innermost_loop = jcp_.brgemm_bd_loop_innermost
                         ? brgemm_bd_loop_innermost
@@ -528,13 +534,18 @@ status_t brgemm_convolution_fwd_t<isa>::init(engine_t *engine) {
     int N_end = (jcp.N_tail == jcp.N) ? 1 : 2;
     int K_begin = 0;
     int K_end = (jcp.K_tail == jcp.K) ? 1 : 2;
+    int i_init_begin = (div_up(jcp.nb_ic, jcp.nb_ic_blocking) == 1
+                               && KD_BLOCK == KD && KH_BLOCK == KH)
+            ? 1
+            : 0;
+    int i_init_end = 2;
 
     for (int bs = 0; bs <= jcp.max_batch; bs++) {
         if (_pd->batchsizes[bs] == -1) continue;
 
         for_(int i_N = N_begin; i_N < N_end; i_N++)
         for_(int i_M = M_begin; i_M < M_end; i_M++)
-        for_(int i_init = 0; i_init < 2; i_init++)
+        for_(int i_init = i_init_begin; i_init < i_init_end; i_init++)
         for (int i_K = K_begin; i_K < K_end; i_K++) {
             auto M = (i_M) ? jcp.M_tail : jcp.M;
             if (M <= 0) continue;
@@ -542,13 +553,15 @@ status_t brgemm_convolution_fwd_t<isa>::init(engine_t *engine) {
         }
     }
 
-    for_(int i_N = N_begin; i_N < N_end; i_N++)
-    for (int i_M = M_begin; i_M < M_end; i_M++) {
-        // init init and po_kernels for cases then we never call brgemm kernels
-        // e.g. for d/h padded areas
-        // TODO: do this only if d/h padding > kd/kh
-        auto M = (i_M) ? jcp.M_tail : jcp.M;
-        add_po_kernels(i_N, M, M, need_postwork);
+    if (jcp.exec_type != exec_trans) {
+        for_(int i_N = N_begin; i_N < N_end; i_N++)
+        for (int i_M = M_begin; i_M < M_end; i_M++) {
+            // init "init" and "po" kernels for cases then we never call brgemm kernels
+            // e.g. for d/h padded areas
+            // TODO: do this only if d/h padding > kd/kh
+            auto M = (i_M) ? jcp.M_tail : jcp.M;
+            add_po_kernels(i_N, M, M, need_postwork);
+        }
     }
 
     if (jcp.exec_type == exec_base) {

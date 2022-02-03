@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 * Copyright 2021 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,7 +43,7 @@ using namespace dnnl::impl::data_type;
 using namespace dnnl::impl::cpu::matmul;
 
 // clang-format off
-const impl_list_item_t impl_list[] = REG_MATMUL_P({
+constexpr impl_list_item_t impl_list[] = REG_MATMUL_P({
         CPU_INSTANCE_AARCH64_ACL(acl_matmul_t)
         CPU_INSTANCE_AVX512(brgemm_matmul_t<avx512_core>)
         CPU_INSTANCE(gemm_f32_matmul_t)

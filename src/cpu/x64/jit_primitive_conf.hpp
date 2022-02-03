@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2021 Intel Corporation
+* Copyright 2016-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -30,13 +30,6 @@ namespace cpu {
 namespace x64 {
 
 /* convolution */
-enum conv_version_t {
-    ver_unused,
-    ver_fma,
-    ver_avx512_core,
-    ver_4fma,
-    ver_vnni
-};
 enum conv_loop_order_t {
     loop_cgn,
     loop_gnc,
@@ -90,7 +83,7 @@ enum class jit_memory_tag_kind_t { ncsp, nspc, blocked, undef };
 
 struct jit_conv_conf_t {
     prop_kind_t prop_kind;
-    conv_version_t ver;
+    bool has_vnni;
     conv_loop_order_t loop_order;
     conv_harness_t harness;
 
@@ -145,7 +138,7 @@ struct jit_conv_conf_t {
     int nonblk_group_off;
     /* fma avx512_core */
     conv_kernel_kind_t kernel_kind;
-    /* 4fma */
+
     int tr_iw, tr_ih;
     int tr_kw, tr_kh;
     int tr_src_num_guard_elems;
@@ -155,10 +148,6 @@ struct jit_conv_conf_t {
     size_t tr_diff_dst_buf_size, tr_diff_dst_buf_count;
     int nthr_mb_work;
 
-    /* 1st conv: 4fma */
-    int tr_ld;
-    int kh_step;
-    /* 4vnni */
     int typesize_in;
     int typesize_out;
     int typesize_bia;
@@ -284,7 +273,7 @@ inline status_t init_tag(format_tag_t &tag, const memory_desc_wrapper &mdw,
 }
 
 struct jit_conv_conf_2x3_wino_t {
-    conv_version_t ver;
+    bool has_vnni;
 
     int m;
     int r;
@@ -378,8 +367,6 @@ struct jit_conv_winograd_conf_t : public jit_conv_conf_t {
     int jtiles;
     int ntiles;
     int ic_simd_block = 16;
-    int tile_4fma_padding;
-    int tile_4fma;
     int oc_simd_block = 16;
     int oc_reg_block;
     int ic_reg_block;
@@ -393,7 +380,6 @@ struct jit_conv_winograd_conf_t : public jit_conv_conf_t {
     int nb_reg;
 
     int dimK;
-    int dimK_4fma;
     int dimK_reg_block;
     int dimK_block;
     int dimK_nb_block;
@@ -553,7 +539,7 @@ struct jit_wino_transform_call_s {
 
 struct jit_1x1_conv_conf_t {
     prop_kind_t prop_kind;
-    conv_version_t ver;
+    bool has_vnni;
 
     int ndims;
     int mb;
@@ -587,20 +573,18 @@ struct jit_1x1_conv_conf_t {
     int load_loop_load_step, load_loop_iter_step;
     int bcast_loop_output_step, bcast_loop_output_substep;
     int bcast_loop_bcast_step, bcast_loop_bcast_substep;
-    int fma_step;
     int load_grp_count;
     conv_1x1_loop_order_t loop_order;
     bool use_vmovntps;
     /* avx512 core */
     bool expl_bcast;
-    /* 4vnni */
+
     int typesize_in;
     int typesize_out;
     int typesize_bia;
     int typesize_acc;
-    /* 4fma */
+
     bool transpose_src;
-    int tr_is;
     int nthr, nthr_mb, nthr_g, nthr_oc_b, nthr_ic_b;
     int is_oc_scale;
     data_type_t bia_dt;
@@ -688,6 +672,7 @@ struct jit_pool_conf_t {
     bool with_eltwise;
     bool with_binary;
     int nthr;
+    memory_desc_t *tmp_md = nullptr;
 };
 
 struct jit_pool_call_s {
@@ -699,7 +684,7 @@ struct jit_pool_call_s {
     const void *indices_prf;
     const void *post_ops_binary_rhs_arg_vec;
     const void *dst_orig;
-    size_t c_elem_off;
+    const void *dst_po_helper;
     size_t zero_ih;
     size_t zero_id;
     const void *zero_ptr;
@@ -830,7 +815,6 @@ enum conv_brgemm_exec_type_t {
 struct jit_brgemm_conv_conf_t {
     cpu_isa_t isa;
     prop_kind_t prop_kind;
-    conv_version_t ver;
     conv_brgemm_loop_order_t loop_order;
     conv_harness_t harness;
     int simd_w, amx_w, amx_h;
@@ -909,6 +893,7 @@ struct jit_brgemm_conv_conf_t {
 
     bool use_uker;
     bool use_interleave_stores;
+    brgemm_kernel_prefetching_t hint_prefetching;
     bool is_1x1;
 };
 

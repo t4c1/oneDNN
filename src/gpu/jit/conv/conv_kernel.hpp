@@ -855,6 +855,15 @@ public:
         }
     }
 
+    void eand(const ngen::InstructionModifier &mod, const ngen_operand_t &dst,
+            const ngen_operand_t &src0, const ngen_operand_t &src1) {
+        if (src1.is_reg_data()) {
+            and_(mod, dst.reg_data(), src0.reg_data(), src1.reg_data());
+        } else {
+            and_(mod, dst.reg_data(), src0.reg_data(), src1.immediate());
+        }
+    }
+
     // Adapted version of magicgu function from Hacker's Delight 10-15.
     static void eidiv_magicgu(uint32_t d, uint32_t &m, uint32_t &p) {
         uint32_t s32_max = std::numeric_limits<int32_t>::max();
@@ -915,7 +924,10 @@ public:
                 mad(mod, rem, x, _qot, -int16_t(y));
             } else {
                 auto tmp = ra_.alloc_sub<uint64_t>();
-                mul(1, tmp, _qot, y);
+                mul(1, tmp.ud(0), _qot, y & 0xFFFF);
+                mul(1, tmp.ud(1), _qot, y >> 16);
+                shl<uint32_t>(1, tmp.ud(1), tmp.ud(1), 16);
+                add(1, tmp.ud(0), tmp.ud(1), tmp.ud(0));
                 add(mod, rem, x, -tmp.ud(0));
                 ra_.safeRelease(tmp);
             }
@@ -2032,11 +2044,14 @@ public:
 
         switch (obj.op_kind) {
             case op_kind_t::_and: {
-                eval(obj.a, dst_op);
-                eval(obj.b,
-                        ngen_operand_t(
-                                dst_op, mod | dst_op.flag_register_mod()));
-                break;
+                if (obj.type.is_bool()) {
+                    eval(obj.a, dst_op);
+                    eval(obj.b,
+                            ngen_operand_t(
+                                    dst_op, mod | dst_op.flag_register_mod()));
+                    break;
+                }
+                // else fall through to the default label.
             }
             default: {
                 // Some cases require pre-allocated register regions with
@@ -2342,6 +2357,7 @@ private:
                 host_->ecmp(cmp_mod, src0, src1);
                 break;
             }
+            case op_kind_t::_and: host_->eand(mod, dst, src0, src1); break;
             case op_kind_t::_prelu: {
                 int grf_size = ngen::GRF::bytes(hw);
                 int esize = mod.getExecSize();
@@ -3261,7 +3277,7 @@ public:
 
         int elems_per_load = 16;
         for (int i = 0; i < elems_per_thr; i += elems_per_load) {
-            cmp(16 | lt | f0[0], get_elem(i), elems_);
+            cmp(16 | lt | f0[0], get_elem(i)(1), elems_);
             if (use_a64) {
                 auto h_a64 = get_subregister(
                         hw, ngen::DataType::uq, src_ptr_vec, i);
@@ -3299,7 +3315,7 @@ public:
                 if (use_a64) eadd(8, h, h, dst_ptr_);
             }
 
-            cmp(16 | lt | f0[0], get_elem(i), elems_);
+            cmp(16 | lt | f0[0], get_elem(i)(1), elems_);
             if (use_a64) {
                 store(16 | f0[0], ngen::scattered_byte(2), A64, dst_header[0],
                         get_dst_reg(i * 2));

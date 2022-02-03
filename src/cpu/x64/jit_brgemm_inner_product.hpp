@@ -129,6 +129,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     brgattr.hint_innermost_loop = brgemm_ld_loop_innermost;
                     brgattr.use_uker = jbgp_.use_uker;
                     brgattr.use_interleave_stores = jbgp_.use_interleave_stores;
+                    brgattr.hint_prefetching = jbgp_.hint_prefetching;
 
                     CHECK(brgemm_desc_set_attr(&brg, brgattr));
                 }
@@ -285,6 +286,7 @@ struct brgemm_inner_product_bwd_data_t : public primitive_t {
                     brgattr.hint_innermost_loop = brgemm_ld_loop_innermost;
                     brgattr.use_uker = jbgp_.use_uker;
                     brgattr.use_interleave_stores = jbgp_.use_interleave_stores;
+                    brgattr.hint_prefetching = jbgp_.hint_prefetching;
 
                     CHECK(brgemm_desc_set_attr(&brg, brgattr));
                 }
@@ -442,6 +444,7 @@ struct brgemm_inner_product_bwd_weights_t : public primitive_t {
                     brgattr.hint_innermost_loop = brgemm_ld_loop_innermost;
                     brgattr.use_uker = jbgp_.use_uker;
                     brgattr.use_interleave_stores = jbgp_.use_interleave_stores;
+                    brgattr.hint_prefetching = jbgp_.hint_prefetching;
 
                     CHECK(brgemm_desc_set_attr(&brg, brgattr));
                 }
@@ -468,10 +471,8 @@ struct brgemm_inner_product_bwd_weights_t : public primitive_t {
         }
 
         int get_brg_batchsize(bool is_bs_tail, bool is_K_tail) const {
-            auto adj_os = jbgp_.os
-                    + ((isa == avx512_core_bf16_amx_bf16) ? jbgp_.os % 2 : 0);
             auto bs = (is_K_tail) ? 1
-                                  : ((is_bs_tail) ? (adj_os / jbgp_.os_block)
+                                  : ((is_bs_tail) ? (jbgp_.os / jbgp_.os_block)
                                                           % jbgp_.nb_os_blocking
                                                   : jbgp_.nb_os_blocking);
             return bs;

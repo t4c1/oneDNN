@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ namespace {
 using namespace dnnl::impl::data_type;
 
 // clang-format off
-const impl_list_item_t impl_list[] = REG_BINARY_P({
+constexpr impl_list_item_t impl_list[] = REG_BINARY_P({
         CPU_INSTANCE_X64(jit_uni_binary_t)
         CPU_INSTANCE(ref_binary_t)
         /* eol */

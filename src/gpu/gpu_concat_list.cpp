@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ namespace {
             __VA_ARGS__::pd_t>()),
 
 // clang-format off
-const impl_list_item_t concat_impl_list[] = REG_CONCAT_P({
+constexpr impl_list_item_t concat_impl_list[] = REG_CONCAT_P({
         CONCAT_INSTANCE(ocl::simple_concat_t)
         CONCAT_INSTANCE(ocl::gen9_concat_t)
         CONCAT_INSTANCE(ocl::ref_concat_t)

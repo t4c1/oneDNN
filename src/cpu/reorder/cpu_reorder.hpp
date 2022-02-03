@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2021 Intel Corporation
+* Copyright 2020-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -66,22 +66,22 @@ using impl_list_map_t
         = std::map<reorder_impl_key_t, std::vector<impl_list_item_t>>;
 
 /* regular reorders */
-extern const impl_list_map_t regular_f32_bf16_impl_list_map;
-extern const impl_list_map_t regular_f32_f16_impl_list_map;
-extern const impl_list_map_t regular_f32_f32_impl_list_map;
-extern const impl_list_map_t regular_f32_s32_impl_list_map;
-extern const impl_list_map_t regular_f32_s8_impl_list_map;
-extern const impl_list_map_t regular_f32_u8_impl_list_map;
-extern const impl_list_map_t regular_bf16_impl_list_map;
-extern const impl_list_map_t regular_f16_impl_list_map;
-extern const impl_list_map_t regular_s32_impl_list_map;
-extern const impl_list_map_t regular_s8_impl_list_map;
-extern const impl_list_map_t regular_u8_impl_list_map;
+extern const impl_list_map_t &regular_f32_bf16_impl_list_map();
+extern const impl_list_map_t &regular_f32_f16_impl_list_map();
+extern const impl_list_map_t &regular_f32_f32_impl_list_map();
+extern const impl_list_map_t &regular_f32_s32_impl_list_map();
+extern const impl_list_map_t &regular_f32_s8_impl_list_map();
+extern const impl_list_map_t &regular_f32_u8_impl_list_map();
+extern const impl_list_map_t &regular_bf16_impl_list_map();
+extern const impl_list_map_t &regular_f16_impl_list_map();
+extern const impl_list_map_t &regular_s32_impl_list_map();
+extern const impl_list_map_t &regular_s8_impl_list_map();
+extern const impl_list_map_t &regular_u8_impl_list_map();
 
 /* conv reorders w/ compensation */
-extern const impl_list_map_t comp_f32_s8_impl_list_map;
-extern const impl_list_map_t comp_bf16_s8_impl_list_map;
-extern const impl_list_map_t comp_s8_s8_impl_list_map;
+extern const impl_list_map_t &comp_f32_s8_impl_list_map();
+extern const impl_list_map_t &comp_bf16_s8_impl_list_map();
+extern const impl_list_map_t &comp_s8_s8_impl_list_map();
 
 // clang-format off
 
@@ -89,7 +89,11 @@ extern const impl_list_map_t comp_s8_s8_impl_list_map;
     impl_list_item_t(impl_list_item_t::reorder_type_deduction_helper_t< \
             simple_reorder_t<idt, ifmt, odt, ofmt, __VA_ARGS__>::pd_t>()),
 
-#define REG_SR_DIRECT_COPY(idt, odt) \
+#define REG_SR_BIDIR(idt, ifmt, odt, ofmt) \
+    REG_SR(idt, ifmt, odt, ofmt, fmt_order::keep) \
+    REG_SR(idt, ifmt, odt, ofmt, fmt_order::reverse)
+
+#define REG_SR_DIRECT_COPY(idt, odt)				  \
     REG_SR(idt, any, odt, any, fmt_order::any, spec::direct_copy) \
     REG_SR(idt, any, odt, any, fmt_order::any, spec::direct_copy_except_dim_0)
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 #ifndef CPU_X64_RNN_JIT_UNI_LSTM_CELL_POSTGEMM_BWD_HPP
 #define CPU_X64_RNN_JIT_UNI_LSTM_CELL_POSTGEMM_BWD_HPP
 
-#include <iostream>
 #include <memory>
 #include "common/utils.hpp"
 #include "cpu/x64/rnn/jit_uni_lstm_cell_postgemm.hpp"

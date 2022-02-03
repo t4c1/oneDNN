@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021 Intel Corporation
+* Copyright 2021-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -1097,7 +1097,6 @@ void brg_blocking_t::iterate_ker_block(brg_blocking_t &best_brgb, int kd_block_,
                         || kw_block_pad != kw);
         if (exec_type == exec_base)
             use_buffer = use_buffer || (maybe_use_buffer && iwp != iw);
-        if (is_amx(isa)) use_buffer = use_buffer || (use_M_mask > 0);
 
         const status_t st = estimate_brgemm_ur();
         if (st != status::success) continue;
@@ -1690,6 +1689,7 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.oskip = 0;
     jcp.use_uker = false;
     jcp.use_interleave_stores = false;
+    jcp.hint_prefetching = brgemm_kernel_prefetching_t::brgemm_prf_default;
     jcp.brgemm_bd_loop_innermost = false;
 
     // fast check data layout before spending time for blocking selection
@@ -1724,8 +1724,11 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
                 && (jcp.oh == jcp.ow) && (jcp.oh == 150))
             return status::unimplemented;
         // disabled for first convolutions excepting 3d
-        const bool is_3d = jcp.ndims == 5;
-        if (jcp.ic <= 4 && !is_3d) return status::unimplemented;
+        const bool is_real_3d = (jcp.ndims == 5
+                && (jcp.id > 1 || jcp.od > 1 || jcp.kd > 1
+                        || jcp.dilate_d > 0));
+
+        if (jcp.ic <= 4 && !is_real_3d) return status::unimplemented;
 
         if (jcp.f_pad >= jcp.kd || jcp.t_pad >= jcp.kh || jcp.r_pad >= jcp.kw)
             return status::unimplemented;
@@ -1857,6 +1860,8 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
             jcp.use_M_mask = jcp.is_os_blocking ? 2 : 0;
             jcp.use_uker = true;
             jcp.use_interleave_stores = true;
+            jcp.hint_prefetching
+                    = brgemm_kernel_prefetching_t::brgemm_prf_output1;
             // assuming 2x2 decomposition in amx brgemm kernel
             // and overlap of input by kw
             const auto bd_blocking = 2 * jcp.amx_h;
@@ -2049,6 +2054,9 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     jcp.adjusted_batch_size
             = div_up(rnd_up(jcp.gemm_batch_size * sc_size, P4K), sc_size);
 
+    jcp.use_uker = is_amx(isa);
+    if (jcp.use_uker)
+        jcp.hint_prefetching = brgemm_kernel_prefetching_t::brgemm_prf_output1;
     CHECK(pick_tags(jcp, src_md, weights_md, dst_md, bias_md));
     CHECK(attr.set_default_formats(&dst_md));
 
@@ -2070,30 +2078,6 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
             : 0;
     jcp.buffer_size = jcp.LDC * jcp.M;
 
-#if 0
-    printf("@@@ debug: nthreads = %d, IC = %d, OC = %d, ID = %d, IH = %d, IW = "
-           "%d, OD = %d, OH = %d, OW = %d, KD = %d, "
-           "KH = %d, KW = %d\n",
-            nthreads, jcp.ic, jcp.oc, jcp.id, jcp.ih, jcp.iw, jcp.od, jcp.oh,
-            jcp.ow, jcp.kd, jcp.kh, jcp.kw);
-
-    printf("@@@ debug: blocking: ic_block = %d, nb_ic_blocking = %d, oc_block "
-           "= %d, os_block = %d, ow_block = %d, nb_os_blocking = %d, "
-           "loop_order = %d, "
-           "wei_plain = %d, wei_tag = %d \n",
-            jcp.ic_block, jcp.nb_ic_blocking, jcp.oc_block, jcp.os_block,
-            jcp.ow_block, jcp.nb_os_blocking, jcp.loop_order, jcp.wei_plain,
-            jcp.wei_tag);
-
-    printf("@@@ debug: Matrix configuration: M = %d, N = %d, K = "
-           "%d, M_tail = %d, N_tail = %d, K_tail = %d, LDA = %d, LDB = %d, LDC "
-           "= %d ur = %d\n",
-            jcp.M, jcp.N, jcp.K, jcp.M_tail, jcp.N_tail, jcp.K_tail, jcp.LDA,
-            jcp.LDB, jcp.LDC, best_brgb.ur);
-    printf("@@@ debug: brg_type = %d use_buffer = %d \n", jcp.brg_type,
-            jcp.use_buffer);
-    fflush(nullptr);
-#endif
     return status::success;
 }
 

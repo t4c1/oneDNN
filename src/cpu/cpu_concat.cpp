@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2021 Intel Corporation
+* Copyright 2017-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ using namespace dnnl::impl::data_type;
     impl_list_item_t(impl_list_item_t::concat_type_deduction_helper_t< \
             __VA_ARGS__::pd_t>()),
 // clang-format off
-const impl_list_item_t cpu_concat_impl_list[] = REG_CONCAT_P({
+constexpr impl_list_item_t cpu_concat_impl_list[] = REG_CONCAT_P({
         INSTANCE(simple_concat_t<f32>)
         INSTANCE(simple_concat_t<u8>)
         INSTANCE(simple_concat_t<s8>)

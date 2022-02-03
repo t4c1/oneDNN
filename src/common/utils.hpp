@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2021 Intel Corporation
+* Copyright 2016-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -624,8 +624,8 @@ private:
     bool initialized_;
 
 public:
-    setting_t() : initialized_ {false} {}
-    setting_t(const T init) : value_ {init}, initialized_ {false} {}
+    constexpr setting_t() : value_ {}, initialized_ {false} {}
+    constexpr setting_t(const T init) : value_ {init}, initialized_ {false} {}
     bool initialized() { return initialized_; }
     T get() { return value_; }
     void set(T new_value) {

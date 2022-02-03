@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2021 Intel Corporation
+* Copyright 2016-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -95,6 +95,8 @@ static inline void tc_configure_tile(
 //
 // (Roma)
 
+} // namespace
+
 #ifdef XBYAK64
 constexpr Xbyak::Operand::Code abi_save_gpr_regs[] = {
         Xbyak::Operand::RBX,
@@ -109,19 +111,32 @@ constexpr Xbyak::Operand::Code abi_save_gpr_regs[] = {
 #endif
 };
 
+constexpr Xbyak::Operand::Code abi_param_regs[] = {
 #ifdef _WIN32
-static const Xbyak::Reg64 abi_param1(Xbyak::Operand::RCX),
-        abi_param2(Xbyak::Operand::RDX), abi_param3(Xbyak::Operand::R8),
-        abi_param4(Xbyak::Operand::R9), abi_not_param1(Xbyak::Operand::RDI);
+        Xbyak::Operand::RCX, Xbyak::Operand::RDX, Xbyak::Operand::R8,
+        Xbyak::Operand::R9
 #else
-static const Xbyak::Reg64 abi_param1(Xbyak::Operand::RDI),
-        abi_param2(Xbyak::Operand::RSI), abi_param3(Xbyak::Operand::RDX),
-        abi_param4(Xbyak::Operand::RCX), abi_param5(Xbyak::Operand::R8),
-        abi_param6(Xbyak::Operand::R9), abi_not_param1(Xbyak::Operand::RCX);
+        Xbyak::Operand::RDI, Xbyak::Operand::RSI, Xbyak::Operand::RDX,
+        Xbyak::Operand::RCX, Xbyak::Operand::R8, Xbyak::Operand::R9
 #endif
+};
+
+constexpr Xbyak::Operand::Code abi_not_param_reg =
+#ifdef _WIN32
+        Xbyak::Operand::RDI;
+#else
+        Xbyak::Operand::RCX;
 #endif
 
-} // namespace
+#define abi_param1 Xbyak::Reg64(abi_param_regs[0])
+#define abi_param2 Xbyak::Reg64(abi_param_regs[1])
+#define abi_param3 Xbyak::Reg64(abi_param_regs[2])
+#define abi_param4 Xbyak::Reg64(abi_param_regs[3])
+#define abi_param5 Xbyak::Reg64(abi_param_regs[4])
+#define abi_param6 Xbyak::Reg64(abi_param_regs[5])
+#define abi_not_param1 Xbyak::Reg64(abi_not_param_reg)
+
+#endif
 
 class jit_generator : public Xbyak::CodeGenerator, public c_compatible {
 public:
@@ -202,20 +217,8 @@ public:
         return rsp + saved_regs_size + first_params_and_return_addr_size;
     }
 
-    void mic_prefetcht0(Xbyak::Address a) {
-        if (is_valid_isa(avx512_mic)) prefetcht0(a);
-    }
-
-    void mic_prefetcht1(Xbyak::Address a) {
-        if (is_valid_isa(avx512_mic)) prefetcht1(a);
-    }
-
-    void mic_prefetcht2(Xbyak::Address a) {
-        if (is_valid_isa(avx512_mic)) prefetcht2(a);
-    }
-
     void uni_vzeroupper() {
-        if (mayiuse(avx) && !mayiuse(avx512_mic)) vzeroupper();
+        if (mayiuse(avx)) vzeroupper();
     }
 
     void postamble() {
@@ -1463,7 +1466,6 @@ public:
         //
         // Pros compared to mul/imul:
         // - does not require using known registers
-        // - not microcoded on Intel(R) Xeon Phi(TM) processors
         // Still, there are probably a lot of cases when mul/imul is faster on
         // Intel(R) Core(TM) processors. Not intended for critical path.
 

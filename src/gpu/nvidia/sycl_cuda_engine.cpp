@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2021 Intel Corporation
+* Copyright 2020-2022 Intel Corporation
 * Copyright 2020 Codeplay Software Limited
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -182,7 +182,7 @@ namespace {
 using namespace dnnl::impl::data_type;
 
 // clang-format off
-const dnnl::impl::impl_list_item_t sycl_cuda_impl_list[] = {
+constexpr dnnl::impl::impl_list_item_t sycl_cuda_impl_list[] = {
         // Elementwise
         INSTANCE(cudnn_eltwise_fwd_t)
         INSTANCE(cudnn_eltwise_bwd_t)

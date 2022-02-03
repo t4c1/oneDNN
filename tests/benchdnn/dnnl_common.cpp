@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2021 Intel Corporation
+* Copyright 2017-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -297,6 +297,7 @@ int execute_and_wait(perf_function_t &exec_func, const dnnl_engine_t &engine,
     if (is_bench_mode(CORR)) {
         for (int i = 0; i < args.size(); ++i) {
             SAFE(check_zero_padding(args.dnn_mem(i), args.arg(i)), WARN);
+            SAFE(check_buffer_overwrite(args.dnn_mem(i), args.arg(i)), WARN);
         }
     }
 
@@ -559,6 +560,27 @@ void check_sum_post_ops(
                 }
             }
         }
+    }
+}
+
+void check_inplace(res_t *res, dnnl_data_type_t sdt, dnnl_data_type_t ddt,
+        const std::string &stag, const std::string &dtag) {
+    // Note: existing implementation of dnn_mem_t doesn't allow to track the
+    // fact that two different objects pointing on the same SYCL memory should
+    // not map/unmap both objects.
+    // This leads to the restriction that memory descriptors should coincide,
+    // thus, a single memory object would be used for in-place validation.
+    // General limitation of in-place mode is having same amount of memory on
+    // input and output.
+    if (sdt != ddt) {
+        res->state = SKIPPED, res->reason = INVALID_CASE;
+        return;
+    }
+
+    if (dtag == tag::any) return;
+    if (stag != dtag) {
+        res->state = SKIPPED, res->reason = INVALID_CASE;
+        return;
     }
 }
 

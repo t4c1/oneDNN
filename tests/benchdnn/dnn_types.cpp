@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2017-2021 Intel Corporation
+* Copyright 2017-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -149,6 +149,7 @@ policy_t attr_t::str2policy(const std::string &str) {
     CASE(PER_MB_SPATIAL);
     CASE(PER_SPATIAL);
     CASE(PER_MB_W);
+    CASE(PER_W);
     CASE(PER_TENSOR);
 #undef CASE
     assert(!"unknown attr_t::policy_t policy");
@@ -164,6 +165,7 @@ const char *attr_t::policy2str(policy_t policy) {
     if (policy == PER_MB_SPATIAL) return "per_mb_spatial";
     if (policy == PER_SPATIAL) return "per_spatial";
     if (policy == PER_MB_W) return "per_mb_w";
+    if (policy == PER_W) return "per_w";
     if (policy == PER_TENSOR) return "per_tensor";
     assert(!"unknown attr_t::policy_t policy");
     return "unknown attr_t::policy_t policy";
@@ -178,6 +180,7 @@ int attr_t::get_default_mask(policy_t policy) {
         case PER_MB_SPATIAL: return (1 << 0) + (1 << 2) + (1 << 3);
         case PER_SPATIAL: return (1 << 2) + (1 << 3);
         case PER_MB_W: return (1 << 0) + (1 << 3);
+        case PER_W: return (1 << 3);
         case PER_TENSOR: return (1 << DNNL_MAX_NDIMS) - 1;
         case COMMON: return 0;
         default: SAFE(FAIL, CRIT); return 0;
@@ -189,7 +192,15 @@ int attr_t::get_default_mask(policy_t policy) {
 int parse_value_and_runtime(float &value, bool &runtime, const std::string &s) {
     // process value
     size_t scale_pos = 0;
-    value = std::stof(s, &scale_pos);
+    try {
+        value = std::stof(s, &scale_pos);
+    } catch (const std::invalid_argument &) {
+        BENCHDNN_PRINT(0, "%s\n%s \'%s\'; %s\n",
+                "Error: output scale or zero point input value is invalid.",
+                "Given input:", s.c_str(),
+                "Expected input: \'VAL[*]\'. See help for proper syntax.");
+        exit(1);
+    }
     runtime = false;
     if (scale_pos + 1 < s.size()) return FAIL;
     if (scale_pos == s.size()) return OK;
@@ -1227,7 +1238,8 @@ int check_tag(const std::string &tag_, bool check_enum_tags_only) {
     return check_abc_tag(tag, check_enum_tags_only);
 }
 
-void maybe_oscale(const attr_t &attr, float &d, float *scales, int64_t oc) {
+void maybe_oscale(
+        const attr_t &attr, float &d, const float *scales, int64_t oc) {
     if (!attr.oscale.is_def()) {
         int64_t idx = attr.oscale.policy == policy_t::COMMON ? 0 : oc;
         d *= scales[idx];

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021 Intel Corporation
+* Copyright 2021-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -550,11 +550,18 @@ public:
 
     void set_offset(const expr_t &offset) { offset_ = offset; }
 
-    bool is_strictly_equal(
-            const layout_t &other, bool compare_offset = true) const {
+    bool is_strictly_equal(const layout_t &other, bool compare_offset = true,
+            bool compare_strides = true) const {
         if (!type_.is_equal(other.type_)) return false;
         if (compare_offset && !offset_.is_equal(other.offset_)) return false;
-        if (!ir_utils::is_equal(blocks_, other.blocks_)) return false;
+        if (blocks_.size() != other.blocks_.size()) return false;
+        for (size_t i = 0; i < blocks_.size(); i++) {
+            auto &b0 = blocks_[i];
+            auto &b1 = other.blocks_[i];
+            if (b0.dim_idx != b1.dim_idx) return false;
+            if (b0.block != b1.block) return false;
+            if (compare_strides && b0.stride != b1.stride) return false;
+        }
         return true;
     }
 
@@ -1288,15 +1295,16 @@ public:
         ir_assert(tdims_[tidx].is_empty());
 
         auto texpr = simplify(_texpr);
-        ir_assert(!is_const(texpr)) << "Tensor dimension can't be a constant.";
 
         tdim_info_t tdim(texpr, mask);
         for (int i = 0; i < nvdims(); i++) {
             if (contains_object(texpr, vvars_[i])) tdim.add_vvar(i, vvars_[i]);
         }
-        ir_assert(tdim.nvargs() > 0)
-                << "Tensor dimension must have at least one "
-                   "view dimension that maps to it.";
+        if (!is_const(texpr)) {
+            ir_assert(tdim.nvargs() > 0)
+                    << "Tensor dimension must have at least one view dimension "
+                       "that maps to it.";
+        }
         tdims_[tidx] = tdim;
     }
 
@@ -1385,13 +1393,51 @@ public:
     }
 
     bool is_masked_vdim(int vidx) const {
-        ir_assert(vidx >= 0 && vidx < ntdims());
-        ir_assert(tdims_[vidx].expr().is_equal(vvars_[vidx]));
+        ir_assert(vidx >= 0 && vidx < nvdims());
         ir_assert(has_zero_vstart())
                 << "Can't be reliably determined if the view is a sub-view.";
-        if (has_tmask(vidx)) return true;
-        if (vdims_[vidx] != tlayout_.dim(vidx)) return true;
+        for (int i = 0; i < ntdims(); i++) {
+            auto &tdim = tdims_[i];
+            if (tdim.expr().is_equal(vvars_[vidx])) {
+                if (vdims_[vidx] != tlayout_.dim(i)) return true;
+            }
+            if (has_tmask(i)) {
+                for (int j = 0; j < tdim.nvargs(); j++) {
+                    if (tdim.vidx(j) == vidx) return true;
+                }
+            }
+        }
         return false;
+    }
+
+    // Returns the mask corresponding to `vargs` view indices. The mask is
+    // based on:
+    // 1) combined tensor masks for the given indices
+    // 2) Bounds-based masks for those view dimensions that are used directly
+    //    in the tensor
+    //    - Example: 32a layout when 'a' dimension is A < 32. In general it's
+    //      fine to load/store elements with indices in the range [A, 31]
+    //      assuming the zero padding invariant. However in some cases we need
+    //      to generate the exact bound condition based on the logical indices.
+    expr_t vmask(const std::vector<expr_t> &vargs) const {
+        ir_assert(int(vargs.size()) == nvdims()) << "Incompatible dimensions.";
+        ir_assert(has_zero_vstart())
+                << "Can't be reliably determined if the view is a sub-view.";
+        auto targs = cvt_vargs_to_targs(vargs);
+        auto mask = bool_imm_t::make(true);
+        for (int i = 0; i < ntdims(); i++) {
+            for (int j = 0; j < nvdims(); j++) {
+                if (!tdims_[i].expr().is_equal(vvars_[j])) continue;
+                if (vdims_[j] != tlayout_.dim(i)) {
+                    mask &= (vargs[j] < vdims_[j]);
+                }
+            }
+            if (has_tmask(i)) {
+                auto &tdim = tdims_[i];
+                mask &= tdim.mask(targs[i], vvars_, vargs);
+            }
+        }
+        return mask;
     }
 
     bool can_convert_to_vlayout() const {
@@ -1662,14 +1708,15 @@ private:
 
 std::vector<dim_t> normalize_conv_dims(std::vector<dim_t> &dims,
         bool with_groups, int groups, bool is_dw, int reduced_dim,
-        bool add_groups, bool is_wei);
+        bool fuse_spatial, bool add_groups, bool is_wei);
 
 layout_t normalize_conv_layout(const layout_t &_layout, bool with_groups,
-        int groups, bool is_dw, int reduced_dim, bool add_groups, bool is_wei);
+        int groups, bool is_dw, int reduced_dim, bool fuse_spatial,
+        bool add_groups, bool is_wei);
 
 void normalize_conv_layouts(layout_t &src_layout, layout_t &wei_layout,
         layout_t &dst_layout, bool with_groups, int groups, bool is_dw,
-        int reduced_dim, bool add_groups);
+        int reduced_dim, bool fuse_spatial, bool add_groups);
 
 } // namespace jit
 } // namespace gpu

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -13,6 +13,8 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 *******************************************************************************/
+
+#include <random>
 
 #include <float.h>
 #include <math.h>
@@ -34,45 +36,52 @@ namespace softmax {
 static int init_pd(dnnl_engine_t engine, const prb_t *prb,
         dnnl_primitive_desc_t &spd, res_t *res, dir_t dir,
         const_dnnl_primitive_desc_t hint) {
-    dnnl_softmax_desc_t sd;
-    dnnl_memory_desc_t data_d;
+    dnnl_softmax_v2_desc_t sd;
+    dnnl_memory_desc_t dst_d;
 
-    SAFE(init_md(&data_d, prb->ndims, prb->dims.data(), prb->dt, prb->tag),
+    SAFE(init_md(&dst_d, prb->ndims, prb->dims.data(), prb->ddt, prb->dtag),
             CRIT);
 
+    dnnl_alg_kind_t alg_kind = dnnl_softmax_accurate;
+    if (prb->alg == LOGSOFTMAX) alg_kind = dnnl_softmax_log;
+
     if (prb->dir & FLAG_FWD) {
+        dnnl_memory_desc_t src_d;
+        SAFE(init_md(&src_d, prb->ndims, prb->dims.data(), prb->sdt, prb->stag),
+                CRIT);
+
         auto prop = prb->dir & FLAG_INF ? dnnl_forward_inference
                                         : dnnl_forward_training;
 
-        if (prb->alg == SOFTMAX)
-            DNN_SAFE(dnnl_softmax_forward_desc_init(
-                             &sd, prop, &data_d, prb->axis),
-                    WARN);
-        else if (prb->alg == LOGSOFTMAX)
-            DNN_SAFE(dnnl_logsoftmax_forward_desc_init(
-                             &sd, prop, &data_d, prb->axis),
-                    WARN);
-        else
-            SAFE(FAIL, CRIT);
-    } else {
-        dnnl_memory_desc_t diff_data_d;
-        DNN_SAFE(dnnl_memory_desc_init_by_tag(&diff_data_d, prb->ndims,
-                         prb->dims.data(), prb->dt, dnnl_format_tag_any),
+        DNN_SAFE(dnnl_softmax_v2_forward_desc_init(
+                         &sd, prop, alg_kind, &src_d, &dst_d, prb->axis),
                 WARN);
-        if (prb->alg == SOFTMAX)
-            DNN_SAFE(dnnl_softmax_backward_desc_init(
-                             &sd, &diff_data_d, &data_d, prb->axis),
-                    WARN);
-        else if (prb->alg == LOGSOFTMAX)
-            DNN_SAFE(dnnl_logsoftmax_backward_desc_init(
-                             &sd, &diff_data_d, &data_d, prb->axis),
-                    WARN);
-        else
-            SAFE(FAIL, CRIT);
+    } else {
+        // Re-create dst_md with source tag if dst was not specified, immitating
+        // default value.
+        if (prb->dtag == tag::any) {
+            SAFE(init_md(&dst_d, prb->ndims, prb->dims.data(), prb->ddt,
+                         prb->stag),
+                    CRIT);
+        }
+
+        dnnl_memory_desc_t diff_src_d, diff_dst_d;
+        SAFE(init_md(&diff_src_d, prb->ndims, prb->dims.data(), prb->sdt,
+                     tag::any),
+                CRIT);
+        SAFE(init_md(&diff_dst_d, prb->ndims, prb->dims.data(), prb->ddt,
+                     tag::any),
+                CRIT);
+
+        DNN_SAFE(dnnl_softmax_v2_backward_desc_init(&sd, alg_kind, &diff_src_d,
+                         &diff_dst_d, &dst_d, prb->axis),
+                WARN);
     }
 
+    attr_args_t attr_args;
+    attr_args.prepare_output_scales(prb->attr, prb->scales, 1);
     auto dnnl_attr = make_benchdnn_dnnl_wrapper(
-            create_dnnl_attr(prb->attr, attr_args_t()));
+            create_dnnl_attr(prb->attr, attr_args));
 
     dnnl_status_t init_status
             = dnnl_primitive_desc_create(&spd, &sd, dnnl_attr, engine, nullptr);
@@ -104,7 +113,7 @@ int fill_data_fwd(const prb_t *prb, dnn_mem_t &mem_dt, dnn_mem_t &mem_fp) {
     // Fill data the way it tests two modes: max_val < 0 and max_val >= 0;
     // Test max_val < 0 by using only negative numbers to check correct max_val
     // subtraction, mostly if library used signed value, not abs.
-    // Test max_val >= 0 by exceeding `exp_overflow_arg` value to check answer
+    // Test max_val >= 0 by exceeding `exp_ovfl_arg` value to check answer
     // does not contain +infinity (nan).
     // Distribute several top-1 values to check softmax works right. Also use
     // bit more top-2 values so they contribute in final exp sum as well. Fill
@@ -112,26 +121,64 @@ int fill_data_fwd(const prb_t *prb, dnn_mem_t &mem_dt, dnn_mem_t &mem_fp) {
     // input.
     // Filling data such way prevents cancellation error for LOGSOFTMAX due to
     // log(sum(x_j)) won't be close to zero as in case of single top-1 value.
-    const int exp_overflow_arg = 88;
-    const int top1_val = exp_overflow_arg + 2;
-    const int top2_val = exp_overflow_arg + 1;
-    const int top3_val = exp_overflow_arg;
-    const float top1_prob = 4. / axis_size;
-    const float top2_prob = 7. * top1_prob;
-    const float top3_prob = 3. * top2_prob;
 
-    dnnl::impl::parallel_nd(outer_size, axis_size, inner_size,
-            [&](int64_t ou, int64_t as, int64_t in) {
-                const int sign = (outer_size > 1 ? ou : in) % 2 == 0 ? -1 : 1;
-                const int gen = 13 * ou + 101 * as + 7 * in + 1637;
-                const bool top1 = flip_coin(gen, top1_prob);
-                const bool top2 = !top1 && flip_coin(gen, top2_prob);
-                const bool top3 = !top1 && !top2 && flip_coin(gen, top3_prob);
-                const int value = sign
-                        * (top1 * top1_val + top2 * top2_val + top3 * top3_val);
-                const int64_t ou_in_offset = ou * axis_size * inner_size + in;
-                mem_fp.set_elem(ou_in_offset + as * inner_size, value);
-            });
+    // Do fixed partitioning to have same filling for any number of threads.
+    const int64_t n_chunks = 16;
+    const int64_t chunk_size = div_up(outer_size, n_chunks);
+
+    dnnl::impl::parallel_nd(n_chunks, [&](int64_t idx_chunk) {
+        int64_t idx_start = idx_chunk * chunk_size;
+        int64_t idx_end = MIN2(idx_start + chunk_size, outer_size);
+        std::minstd_rand msr(idx_start + 1);
+        msr.discard(1);
+        std::vector<std::uniform_int_distribution<>> igen_top_fp {
+                std::uniform_int_distribution<>(1, 2),
+                std::uniform_int_distribution<>(2, 5),
+                std::uniform_int_distribution<>(5, 8)};
+        std::vector<std::uniform_int_distribution<>> igen_top_int8 {
+                std::uniform_int_distribution<>(1, 1),
+                std::uniform_int_distribution<>(1, 1),
+                std::uniform_int_distribution<>(0, 4)};
+        std::vector<std::uniform_int_distribution<>> igen_top
+                = sizeof_dt(prb->ddt) == 1 ? igen_top_int8 : igen_top_fp;
+        const int sign = (idx_chunk % 2 != 0 && prb->sdt != dnnl_u8) ? -1 : 1;
+        const int exp_ovfl_arg = 88 * sign;
+        std::vector<int> top_val {
+                exp_ovfl_arg + 2, exp_ovfl_arg + 1, exp_ovfl_arg};
+
+        for_(int64_t idx = idx_start; idx < idx_end; ++idx)
+        for (int64_t in = 0; in < inner_size; in++) {
+            std::vector<int64_t> n_top {
+                    igen_top[0](msr), igen_top[1](msr), igen_top[2](msr)};
+            int i = 2;
+            int64_t n_sum = n_top[0] + n_top[1] + n_top[2];
+            // Adjust number of top elements to fit axis_size if needed
+            while (n_sum > axis_size) {
+                n_sum -= n_top[i];
+                n_top[i] -= std::min(n_top[i], n_sum + n_top[i] - axis_size);
+                n_sum += n_top[i];
+                i--;
+            }
+            // If number of top elements is less the axis_size, set a random
+            // index to start dense filling from.
+            std::uniform_int_distribution<> igen_as_idx(0, axis_size - n_sum);
+            msr.discard(2);
+            int64_t axis_idx_start = igen_as_idx(msr);
+
+            i = 0;
+            for (int64_t as = 0; as < axis_size; as++) {
+                auto offset = inner_size * (idx * axis_size + as) + in;
+                float value = INT_MIN;
+                if (as >= axis_idx_start && as < axis_idx_start + n_sum) {
+                    value = top_val[i];
+                    n_top[i]--;
+                    if (n_top[i] == 0) i++;
+                }
+                mem_fp.set_elem(offset,
+                        round_to_nearest_representable(mem_dt.dt(), value));
+            }
+        }
+    });
 
     SAFE(mem_dt.reorder(mem_fp), WARN);
 
@@ -161,7 +208,26 @@ int fill_data_bwd(
 }
 
 void check_known_skipped_case(const prb_t *prb, res_t *res) {
-    check_known_skipped_case_common({prb->dt}, prb->dir, res);
+    check_known_skipped_case_common({prb->sdt, prb->ddt}, prb->dir, res);
+    if (res->state == SKIPPED) return;
+
+    if (prb->inplace) {
+        check_inplace(res, prb->sdt, prb->ddt, prb->stag, prb->dtag);
+        if (res->state == SKIPPED) return;
+    }
+
+    if (is_gpu()) { // switch to `if (is_nvidia_gpu())` once resolved
+        const bool sdt_is_int8 = prb->sdt == dnnl_s8 || prb->sdt == dnnl_u8;
+        const bool ddt_is_int8 = prb->ddt == dnnl_s8 || prb->ddt == dnnl_u8;
+        const bool dt_ok = prb->sdt == prb->ddt && !sdt_is_int8 && !ddt_is_int8;
+
+        const bool attr_ok = prb->attr.is_def();
+
+        if (!dt_ok || !attr_ok) {
+            res->state = SKIPPED, res->reason = CASE_NOT_SUPPORTED;
+            return;
+        }
+    }
 }
 
 void add_additional_softmax_check(compare::compare_t &cmp) {
@@ -197,26 +263,32 @@ int doit(const prb_t *prb, res_t *res) {
                 const_pd, dnnl_query_exec_arg_md, index);
     };
 
-    const auto &data_md = q(DNNL_ARG_DST); // src_md is not defined for BWD
     const auto &scratchpad_md = q(DNNL_ARG_SCRATCHPAD);
-
     const auto &test_engine = get_test_engine();
 
-    dnn_mem_t src_fp(data_md, dnnl_f32, tag::abx, test_engine);
-    dnn_mem_t src_dt(data_md, test_engine);
-
-    dnn_mem_t &dst_fp = src_fp; // in-place reference
-    dnn_mem_t placeholder_dst_dt;
-    if (!prb->inplace) { placeholder_dst_dt = dnn_mem_t(data_md, test_engine); }
-    dnn_mem_t &dst_dt = prb->inplace ? src_dt : placeholder_dst_dt;
-
+    dnn_mem_t src_dt, placeholder_dst_dt;
+    dnn_mem_t &dst_dt = prb->inplace && (prb->dir & FLAG_FWD)
+            ? src_dt
+            : placeholder_dst_dt;
     dnn_mem_t scratchpad_dt(scratchpad_md, test_engine);
 
     dnn_mem_t d_dst_dt, placeholder_d_src_dt;
+    dnn_mem_t &d_src_dt = prb->inplace ? d_dst_dt : placeholder_d_src_dt;
 
     args_t args;
 
     if (prb->dir & FLAG_FWD) {
+        const auto &src_md = q(DNNL_ARG_SRC);
+        const auto &dst_md = q(DNNL_ARG_DST);
+
+        src_dt = dnn_mem_t(src_md, test_engine);
+        if (!prb->inplace) {
+            placeholder_dst_dt = dnn_mem_t(dst_md, test_engine);
+        }
+
+        dnn_mem_t src_fp(src_md, dnnl_f32, tag::abx, test_engine);
+        dnn_mem_t &dst_fp = src_fp; // in-place reference
+
         SAFE(fill_data_fwd(prb, src_dt, src_fp), WARN);
 
         args.set(DNNL_ARG_SRC, src_dt);
@@ -230,38 +302,49 @@ int doit(const prb_t *prb, res_t *res) {
 
             compare::compare_t cmp;
 
-            const float trh_coeff_log = prb->alg == LOGSOFTMAX ? 4 : 1;
-            const float trh_coeff_f32
-                    = data_md.data_type == dnnl_f32 ? 10.f : 1.f;
-            const float trh = trh_coeff_log * trh_coeff_f32
-                    * epsilon_dt(data_md.data_type);
+            const float trh_coeff_log = prb->alg == LOGSOFTMAX ? 5 : 1;
+            const float trh_coeff_f32 = dst_dt.dt() == dnnl_f32 ? 10.f : 1.f;
+            const float trh
+                    = trh_coeff_log * trh_coeff_f32 * epsilon_dt(dst_dt.dt());
             cmp.set_threshold(trh);
 
             const int64_t axis_size = prb->dims[prb->axis];
-            cmp.set_zero_trust_percent(axis_size < 10 ? 100.f : 60.f);
+            const int64_t n_zeros = dst_dt.sizeof_dt() == 1
+                    ? (axis_size - 1)
+                    : MAX2(0, axis_size - 8);
+            float zero_percent = 100.f * n_zeros / axis_size;
+            // Note:
+            // * Logsoftmax over axis of size `1` does not make any sense.
+            // * Logsoftmax for u8 dst does not make any sense either.
+            if (prb->alg == LOGSOFTMAX
+                    && (axis_size == 1 || dst_dt.dt() == dnnl_u8))
+                zero_percent = 100.f;
+            cmp.set_zero_trust_percent(zero_percent);
 
             add_additional_softmax_check(cmp);
 
             SAFE(cmp.compare(dst_fp, dst_dt, prb->attr, res), WARN);
         }
     } else {
-        const auto &d_data_md = q(DNNL_ARG_DIFF_DST);
+        const auto &dst_md = q(DNNL_ARG_DST);
+        const auto &d_dst_md = q(DNNL_ARG_DIFF_DST);
+        const auto &d_src_md = q(DNNL_ARG_DIFF_SRC);
 
-        dnn_mem_t d_dst_fp
-                = dnn_mem_t(d_data_md, dnnl_f32, tag::abx, test_engine);
-        d_dst_dt = dnn_mem_t(d_data_md, test_engine);
-
-        dnn_mem_t &d_src_fp = d_dst_fp; // in-place reference
+        placeholder_dst_dt = dnn_mem_t(dst_md, test_engine);
+        d_dst_dt = dnn_mem_t(d_dst_md, test_engine);
         if (!prb->inplace) {
-            placeholder_d_src_dt = dnn_mem_t(d_data_md, test_engine);
+            placeholder_d_src_dt = dnn_mem_t(d_src_md, test_engine);
         }
-        dnn_mem_t &d_src_dt = prb->inplace ? d_dst_dt : placeholder_d_src_dt;
+
+        dnn_mem_t dst_fp(dst_md, dnnl_f32, tag::abx, test_engine);
+        dnn_mem_t d_dst_fp(d_dst_md, dnnl_f32, tag::abx, test_engine);
+        dnn_mem_t &d_src_fp = d_dst_fp; // in-place reference
 
         const bool neg_sign = prb->alg == SOFTMAX ? true : false;
-        SAFE(fill_data_bwd(prb, src_dt, src_fp, neg_sign), WARN);
+        SAFE(fill_data_bwd(prb, dst_dt, dst_fp, neg_sign), WARN);
         SAFE(fill_data_bwd(prb, d_dst_dt, d_dst_fp, !neg_sign), WARN);
 
-        args.set(DNNL_ARG_DST, src_dt);
+        args.set(DNNL_ARG_DST, dst_dt);
         args.set(DNNL_ARG_DIFF_DST, d_dst_dt);
         args.set(DNNL_ARG_DIFF_SRC, d_src_dt);
         args.set(DNNL_ARG_SCRATCHPAD, scratchpad_dt);
@@ -269,14 +352,14 @@ int doit(const prb_t *prb, res_t *res) {
         SAFE(execute_and_wait(prim, args), WARN);
 
         if (is_bench_mode(CORR)) {
-            TIME_REF(compute_ref_bwd(prb, src_fp, d_dst_fp, d_src_fp));
+            TIME_REF(compute_ref_bwd(prb, dst_fp, d_dst_fp, d_src_fp));
 
             compare::compare_t cmp;
 
             const float trh_coeff_f32
-                    = data_md.data_type == dnnl_f32 ? 10.f : 1.f;
+                    = d_src_md.data_type == dnnl_f32 ? 10.f : 1.f;
             const float trh
-                    = 4 * trh_coeff_f32 * epsilon_dt(d_data_md.data_type);
+                    = 4 * trh_coeff_f32 * epsilon_dt(d_src_md.data_type);
             cmp.set_threshold(trh);
 
             add_additional_softmax_check(cmp);

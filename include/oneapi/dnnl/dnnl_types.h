@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016-2021 Intel Corporation
+* Copyright 2016-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -1399,6 +1399,9 @@ typedef enum {
     dnnl_reduction,
     /// A PReLU primitive.
     dnnl_prelu,
+    /// A softmax version 2 primitive (softmax with destination memory
+    /// descriptor and algorithm kind).
+    dnnl_softmax_v2,
 
     /// Parameter to allow internal only primitives without undefined behavior.
     /// This parameter is chosen to be valid for so long as sizeof(int) >= 2.
@@ -1507,6 +1510,10 @@ typedef enum {
     /// Primitive expects 4 biases on input:
     /// \f$[b_{u}, b_{r}, b_{c_x}, b_{c_h}]\f$
     dnnl_lbr_gru = 0x4fff,
+    /// AUGRU cell
+    dnnl_vanilla_augru = 0x5fff,
+    /// AUGRU cell with linear before reset
+    dnnl_lbr_augru = 0x6fff,
     /// Binary add
     dnnl_binary_add = 0x1fff0,
     /// Binary mul
@@ -1553,6 +1560,10 @@ typedef enum {
     dnnl_reduction_norm_lp_power_p_max,
     /// Reduction using lp norm without final pth-root
     dnnl_reduction_norm_lp_power_p_sum,
+    /// Softmax
+    dnnl_softmax_accurate = 0x30000,
+    /// Logsoftmax
+    dnnl_softmax_log,
 } dnnl_alg_kind_t;
 
 /// Flags for normalization primitives.
@@ -2006,8 +2017,8 @@ typedef struct {
     /// The kind of primitive. Used for self-identifying the primitive
     /// descriptor. Must be #dnnl_softmax.
     dnnl_primitive_kind_t primitive_kind;
-    /// The kind of propagation. Possible values: #dnnl_forward_training and
-    /// #dnnl_forward_inference.
+    /// The kind of propagation. Possible values: #dnnl_forward_training,
+    /// #dnnl_forward_inference, and #dnnl_backward_data.
     dnnl_prop_kind_t prop_kind;
     /// Source and destination memory descriptor.
     dnnl_memory_desc_t data_desc;
@@ -2018,6 +2029,34 @@ typedef struct {
 } dnnl_softmax_desc_t;
 
 /// @} dnnl_api_softmax
+
+/// @addtogroup dnnl_api_softmax_v2
+/// @{
+
+/// A descriptor of a Softmax operation.
+typedef struct {
+    /// The kind of primitive. Used for self-identifying the primitive
+    /// descriptor. Must be #dnnl_softmax_v2.
+    dnnl_primitive_kind_t primitive_kind;
+    /// The kind of propagation. Possible values: #dnnl_forward_training,
+    /// #dnnl_forward_inference, and #dnnl_backward_data.
+    dnnl_prop_kind_t prop_kind;
+    /// Source memory descriptor.
+    dnnl_memory_desc_t src_desc;
+    /// Source gradient memory descriptor.
+    dnnl_memory_desc_t diff_src_desc;
+    /// The axis along which to perform the softmax.
+    int softmax_axis;
+    /// Softmax algorithm. Possible values: #dnnl_softmax_accurate and
+    /// #dnnl_softmax_log.
+    dnnl_alg_kind_t alg_kind;
+    /// Destination memory descriptor.
+    dnnl_memory_desc_t dst_desc;
+    /// Destination gradient memory descriptor.
+    dnnl_memory_desc_t diff_dst_desc;
+} dnnl_softmax_v2_desc_t;
+
+/// @} dnnl_api_softmax_v2
 
 /// @addtogroup dnnl_api_logsoftmax
 /// @{
@@ -2651,6 +2690,12 @@ typedef const struct dnnl_primitive *const_dnnl_primitive_t;
 /// #DNNL_ARG_SRC_2.
 #define DNNL_ARG_SRC_ITER_C DNNL_ARG_SRC_2
 
+/// Source argument #3.
+#define DNNL_ARG_SRC_3 4
+/// A special mnemonic for RNN input recurrent cell attention vector. An alias for
+/// #DNNL_ARG_SRC_3.
+#define DNNL_ARG_AUGRU_ATTENTION DNNL_ARG_SRC_3
+
 /// Destination argument #0.
 #define DNNL_ARG_DST_0 17
 /// A special mnemonic for destination argument for primitives that have a
@@ -2743,6 +2788,12 @@ typedef const struct dnnl_primitive *const_dnnl_primitive_t;
 /// A special mnemonic for gradient (diff) of RNN input recurrent cell state
 /// vector. An alias for #DNNL_ARG_DIFF_SRC_1.
 #define DNNL_ARG_DIFF_SRC_ITER_C DNNL_ARG_DIFF_SRC_2
+
+/// Gradient (diff) of the source argument #3.
+#define DNNL_ARG_DIFF_SRC_3 132
+/// A special mnemonic for gradient (diff) of RNN input recurrent cell attention
+/// vector. An alias for #DNNL_ARG_DIFF_SRC_3.
+#define DNNL_ARG_DIFF_AUGRU_ATTENTION DNNL_ARG_DIFF_SRC_3
 
 /// Gradient (diff) of the destination argument #0.
 #define DNNL_ARG_DIFF_DST_0 145
@@ -2923,6 +2974,7 @@ typedef enum {
     dnnl_query_pooling_v2_d, ///< pooling version 2 descriptor
     dnnl_query_reduction_d, ///< reduction descriptor
     dnnl_query_prelu_d, ///< prelu descriptor
+    dnnl_query_softmax_v2_d, ///< softmax version 2 descriptor
 
     // memory descriptor section
     dnnl_query_some_md = 128, ///< stub
@@ -3039,11 +3091,11 @@ typedef enum {
     /// Intel Advanced Vector Extensions 2 (Intel AVX2)
     dnnl_cpu_isa_avx2 = 0x7,
 
-    /// Intel Advanced Vector Extensions 512 (Intel AVX-512) subset
+    /// (deprecated) Intel Advanced Vector Extensions 512 (Intel AVX-512) subset
     /// for Intel Xeon Phi processors x200 Series.
     dnnl_cpu_isa_avx512_mic = 0xf,
 
-    /// Intel AVX-512 subset
+    /// (deprecated) Intel AVX-512 subset
     /// for Intel Xeon Phi processors 7235, 7285, 7295 Series.
     dnnl_cpu_isa_avx512_mic_4ops = 0x1f,
 

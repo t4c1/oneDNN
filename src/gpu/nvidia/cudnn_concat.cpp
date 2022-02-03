@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2021 Intel Corporation
+* Copyright 2020-2022 Intel Corporation
 * Copyright 2020 Codeplay Software Limited
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,7 @@ namespace nvidia {
 
 namespace {
 
-const impl_list_item_t cuda_concat_impl_list[]
+constexpr impl_list_item_t cuda_concat_impl_list[]
         = {impl_list_item_t::concat_type_deduction_helper_t<
                    gpu::ocl::ref_concat_t::pd_t>(),
                 nullptr};

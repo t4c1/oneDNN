@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -46,12 +46,27 @@ protected:
     void SetUp() override {
         p = ::testing::TestWithParam<softmax_test_params_t<data_t>>::GetParam();
 
+        const bool is_fwd = p.aprop_kind == prop_kind::forward_training
+                || p.aprop_kind == prop_kind::forward_inference;
+
         SKIP_IF_CUDA(!cuda_check_format_tag(p.memory_format),
                 "Unsupported format tag");
-        SKIP_IF_CUDA(!cuda_check_format_tag(p.diff_memory_format),
-                "Unsupported format tag");
+        if (!is_fwd) {
+            SKIP_IF_CUDA(!cuda_check_format_tag(p.diff_memory_format),
+                    "Unsupported format tag");
+        }
         SKIP_IF_CUDA(data_traits<data_t>::data_type == memory::data_type::bf16,
                 "Unsupported datatype for CUDA");
+        SKIP_IF_CUDA(p.axis != 1, "Unsupported axis values for CUDA");
+
+        const bool is_gpu = get_test_engine_kind() == engine::kind::gpu;
+        if (!is_fwd && is_gpu) {
+            SKIP_IF(p.memory_format != p.diff_memory_format
+                            && p.memory_format != tag::any
+                            && p.diff_memory_format != tag::any,
+                    "Unsupported different memory formats for source and "
+                    "destination");
+        }
 
         catch_expected_failures(
                 [=]() { Test(); }, p.expect_to_fail, p.expected_status);
@@ -65,7 +80,9 @@ protected:
         // softmax specific types and values
         using op_desc_t = softmax_forward::desc;
         using pd_t = softmax_forward::primitive_desc;
-        allows_attr_t aa {false}; // doesn't support anything
+        const bool is_gpu = get_test_engine_kind() == engine::kind::gpu;
+        allows_attr_t aa {false};
+        if (!is_gpu) aa.oscale = true;
 
         auto eng = get_test_engine();
         auto strm = make_stream(eng);
@@ -93,6 +110,9 @@ protected:
         auto softmax = softmax_forward();
         // regular primitive ctor
         softmax = softmax_forward(pd);
+
+        // check primitive kind is softmax
+        ASSERT_TRUE(softmax.get_kind() == primitive::kind::softmax);
 
         // query for data_desc from pd via src
         const auto data_desc = pd.src_desc();
@@ -172,6 +192,9 @@ protected:
         auto softmax = softmax_backward();
         // regular primitive ctor
         softmax = softmax_backward(pd);
+
+        // check primitive kind is softmax
+        ASSERT_TRUE(softmax.get_kind() == primitive::kind::softmax);
 
         // query for diff_data_desc from pd via diff_src
         const auto diff_data_desc = pd.diff_src_desc();

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ using namespace dnnl::impl::data_type;
             impl_list_item_t::reorder_type_deduction_helper_t<__VA_ARGS__>()),
 
 // clang-format off
-const impl_list_item_t reorder_impl_list[] = REG_REORDER_P({
+constexpr impl_list_item_t reorder_impl_list[] = REG_REORDER_P({
         REORDER_INSTANCE(ocl::rnn_weights_reorder_t::pd_t)
         REORDER_INSTANCE(ocl::cross_engine_reorder_t::pd_t)
         REORDER_INSTANCE(ocl::custom_reorder_t::pd_t) // for specific tensor shapes

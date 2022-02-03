@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021 Intel Corporation
+* Copyright 2021-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -107,10 +107,10 @@ status_t brgemm_1x1_convolution_fwd_t<isa>::pd_t::init(engine_t *engine) {
         brgattr.hint_expected_B_size = brgattr.max_bs * vK * vN;
         brgattr.hint_expected_C_size = 0;
         brgattr.wary_tail_read = false;
-        const bool is_amx = brgemm_convolution_utils::is_amx(isa);
         const bool is_small_mb = jcp_.mb == 1;
-        brgattr.use_uker = is_amx && !is_small_mb && brg.rdb > 1;
+        brgattr.use_uker = jcp_.use_uker && !is_small_mb;
         brgattr.use_interleave_stores = brgattr.use_uker;
+        brgattr.hint_prefetching = jcp_.hint_prefetching;
         CHECK(brgemm_desc_set_attr(&brg, brgattr));
         auto LDD = jcp_.oc_without_padding;
         brg.with_sum = with_sum;

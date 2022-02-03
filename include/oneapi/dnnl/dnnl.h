@@ -1972,6 +1972,45 @@ dnnl_status_t DNNL_API dnnl_softmax_backward_desc_init(
 
 /// @} dnnl_api_softmax
 
+/// @addtogroup dnnl_api_softmax_v2
+/// @{
+
+/// Initializes a descriptor for softmax v2 forward propagation primitive.
+///
+/// @param softmax_desc Output descriptor for a softmax primitive.
+/// @param prop_kind Propagation kind. Possible values are
+///     #dnnl_forward_training and #dnnl_forward_inference.
+/// @param alg_kind Softmax algorithm kind: either #dnnl_softmax_accurate, or
+///     #dnnl_softmax_log.
+/// @param src_desc Source memory descriptor.
+/// @param dst_desc Destination memory descriptor.
+/// @param softmax_axis Axis over which softmax is computed.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_softmax_v2_forward_desc_init(
+        dnnl_softmax_v2_desc_t *softmax_desc, dnnl_prop_kind_t prop_kind,
+        dnnl_alg_kind_t alg_kind, const dnnl_memory_desc_t *src_desc,
+        const dnnl_memory_desc_t *dst_desc, int softmax_axis);
+
+/// Initializes a descriptor for softmax v2 backward propagation primitive.
+///
+/// @param softmax_desc Output descriptor for a softmax primitive.
+/// @param alg_kind Softmax algorithm kind: either #dnnl_softmax_accurate, or
+///     #dnnl_softmax_log.
+/// @param diff_src_desc Diff source memory descriptor.
+/// @param diff_dst_desc Diff destination memory descriptor.
+/// @param dst_desc Destination memory descriptor.
+/// @param softmax_axis Axis over which softmax is computed.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_softmax_v2_backward_desc_init(
+        dnnl_softmax_v2_desc_t *softmax_desc, dnnl_alg_kind_t alg_kind,
+        const dnnl_memory_desc_t *diff_src_desc,
+        const dnnl_memory_desc_t *diff_dst_desc,
+        const dnnl_memory_desc_t *dst_desc, int softmax_axis);
+
+/// @} dnnl_api_softmax_v2
+
 /// @addtogroup dnnl_api_logsoftmax
 /// @{
 
@@ -3335,6 +3374,228 @@ dnnl_status_t DNNL_API dnnl_lbr_gru_backward_desc_init(
         const dnnl_memory_desc_t *diff_dst_layer_desc,
         const dnnl_memory_desc_t *diff_dst_iter_desc, unsigned flags);
 
+/// Initializes a descriptor for AUGRU forward propagation primitive.
+///
+/// The following arguments may either be @c NULL or point to a zero memory
+/// descriptor:
+/// - @p src_iter_desc,
+/// - @p bias_desc,
+/// - @p dst_iter_desc.
+///
+/// This would then indicate that the AUGRU forward propagation primitive should
+/// not use them and should default to zero values instead.
+///
+/// @note
+///     All memory descriptors can be initialized with
+///     #dnnl_format_tag_any or with format_kind set to #dnnl_format_kind_any.
+///
+/// @param rnn_desc Output descriptor for AUGRU primitive.
+/// @param prop_kind Propagation kind. Possible values are
+///     #dnnl_forward_training and #dnnl_forward_inference.
+/// @param direction RNN direction. See @ref dnnl_rnn_direction_t for more
+///     info.
+/// @param src_layer_desc Memory descriptor for the input vector.
+/// @param src_iter_desc Memory descriptor for the input recurrent hidden
+///     state vector.
+/// @param attention_desc Memory descriptor for the attention vector.
+/// @param weights_layer_desc Memory descriptor for the weights applied to the
+///     layer input.
+/// @param weights_iter_desc Memory descriptor for the weights applied to the
+///     recurrent input.
+/// @param bias_desc Bias memory descriptor.
+/// @param dst_layer_desc Memory descriptor for the output vector.
+/// @param dst_iter_desc Memory descriptor for the output recurrent hidden
+///     state vector.
+/// @param flags Unused.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_augru_forward_desc_init(dnnl_rnn_desc_t *rnn_desc,
+        dnnl_prop_kind_t prop_kind, dnnl_rnn_direction_t direction,
+        const dnnl_memory_desc_t *src_layer_desc,
+        const dnnl_memory_desc_t *src_iter_desc,
+        const dnnl_memory_desc_t *attention_desc,
+        const dnnl_memory_desc_t *weights_layer_desc,
+        const dnnl_memory_desc_t *weights_iter_desc,
+        const dnnl_memory_desc_t *bias_desc,
+        const dnnl_memory_desc_t *dst_layer_desc,
+        const dnnl_memory_desc_t *dst_iter_desc, unsigned flags);
+
+/// Initializes a descriptor for AUGRU backward propagation primitive.
+///
+/// The following arguments may either be @c NULL or point to a zero memory
+/// descriptor:
+/// - @p src_iter_desc together with @p diff_src_iter_desc,
+/// - @p bias_desc together with @p diff_bias_desc,
+/// - @p dst_iter_desc together with @p diff_dst_iter_desc.
+///
+/// This would then indicate that the AUGRU backward propagation primitive
+/// should not use them and should default to zero values instead.
+///
+/// @note
+///     All memory descriptors can be initialized with
+///     #dnnl_format_tag_any or with format_kind set to #dnnl_format_kind_any.
+///
+/// @param rnn_desc Output descriptor for AUGRU primitive.
+/// @param prop_kind Propagation kind. Must be #dnnl_backward.
+/// @param direction RNN direction. See @ref dnnl_rnn_direction_t for more
+///     info.
+/// @param src_layer_desc Memory descriptor for the input vector.
+/// @param src_iter_desc Memory descriptor for the input recurrent hidden
+///     state vector.
+/// @param attention_desc Memory descriptor for the attention vector.
+/// @param weights_layer_desc Memory descriptor for the weights applied to the
+///     layer input.
+/// @param weights_iter_desc Memory descriptor for the weights applied to the
+///     recurrent input.
+/// @param bias_desc Bias memory descriptor.
+/// @param dst_layer_desc Memory descriptor for the output vector.
+/// @param dst_iter_desc Memory descriptor for the output recurrent hidden
+///     state vector.
+/// @param diff_src_layer_desc Memory descriptor for the diff of input vector.
+/// @param diff_src_iter_desc Memory descriptor for the diff of input recurrent
+///     hidden state vector.
+/// @param diff_attention_desc Memory descriptor for the diff of attention vector.
+/// @param diff_weights_layer_desc Memory descriptor for the diff of weights
+///     applied to the layer input.
+/// @param diff_weights_iter_desc Memory descriptor for the diff of weights
+///     applied to the recurrent input.
+/// @param diff_bias_desc Diff bias memory descriptor.
+/// @param diff_dst_layer_desc Memory descriptor for the diff of output
+///     vector.
+/// @param diff_dst_iter_desc Memory descriptor for the diff of output
+///     recurrent hidden state vector.
+/// @param flags Unused.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_augru_backward_desc_init(dnnl_rnn_desc_t *rnn_desc,
+        dnnl_prop_kind_t prop_kind, dnnl_rnn_direction_t direction,
+        const dnnl_memory_desc_t *src_layer_desc,
+        const dnnl_memory_desc_t *src_iter_desc,
+        const dnnl_memory_desc_t *attention_desc,
+        const dnnl_memory_desc_t *weights_layer_desc,
+        const dnnl_memory_desc_t *weights_iter_desc,
+        const dnnl_memory_desc_t *bias_desc,
+        const dnnl_memory_desc_t *dst_layer_desc,
+        const dnnl_memory_desc_t *dst_iter_desc,
+        const dnnl_memory_desc_t *diff_src_layer_desc,
+        const dnnl_memory_desc_t *diff_src_iter_desc,
+        const dnnl_memory_desc_t *diff_attention_desc,
+        const dnnl_memory_desc_t *diff_weights_layer_desc,
+        const dnnl_memory_desc_t *diff_weights_iter_desc,
+        const dnnl_memory_desc_t *diff_bias_desc,
+        const dnnl_memory_desc_t *diff_dst_layer_desc,
+        const dnnl_memory_desc_t *diff_dst_iter_desc, unsigned flags);
+
+/// Initializes a descriptor for LBR AUGRU forward propagation primitive.
+///
+/// The following arguments may either be @c NULL or point to a zero memory
+/// descriptor:
+/// - @p src_iter_desc,
+/// - @p bias_desc,
+/// - @p dst_iter_desc.
+///
+/// This would then indicate that the LBR AUGRU forward propagation primitive
+/// should not use them and should default to zero values instead.
+///
+/// @param rnn_desc Output descriptor for LBR AUGRU primitive.
+/// @param prop_kind Propagation kind. Possible values are
+///     #dnnl_forward_training and #dnnl_forward_inference.
+/// @param direction RNN direction. See @ref dnnl_rnn_direction_t for more
+///     info.
+/// @param src_layer_desc Memory descriptor for the input vector.
+/// @param src_iter_desc Memory descriptor for the input recurrent hidden
+///     state vector.
+/// @param attention_desc Memory descriptor for the attention vector.
+/// @param weights_layer_desc Memory descriptor for the weights applied to the
+///     layer input.
+/// @param weights_iter_desc Memory descriptor for the weights applied to the
+///     recurrent input.
+/// @param bias_desc Bias memory descriptor.
+/// @param dst_layer_desc Memory descriptor for the output vector.
+/// @param dst_iter_desc Memory descriptor for the output recurrent hidden
+///     state vector.
+/// @param flags Unused.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_lbr_augru_forward_desc_init(
+        dnnl_rnn_desc_t *rnn_desc, dnnl_prop_kind_t prop_kind,
+        dnnl_rnn_direction_t direction,
+        const dnnl_memory_desc_t *src_layer_desc,
+        const dnnl_memory_desc_t *src_iter_desc,
+        const dnnl_memory_desc_t *attention_desc,
+        const dnnl_memory_desc_t *weights_layer_desc,
+        const dnnl_memory_desc_t *weights_iter_desc,
+        const dnnl_memory_desc_t *bias_desc,
+        const dnnl_memory_desc_t *dst_layer_desc,
+        const dnnl_memory_desc_t *dst_iter_desc, unsigned flags);
+
+/// Initializes a descriptor for LBR AUGRU backward propagation primitive.
+///
+/// The following arguments may either be @c NULL or point to a zero memory
+/// descriptor:
+/// - @p src_iter_desc together with @p diff_src_iter_desc,
+/// - @p bias_desc together with @p diff_bias_desc,
+/// - @p dst_iter_desc together with @p diff_dst_iter_desc.
+///
+/// This would then indicate that the LBR AUGRU backward propagation primitive
+/// should not use them and should default to zero values instead.
+///
+/// @note
+///     All memory descriptors can be initialized with
+///     #dnnl_format_tag_any or with format_kind set to #dnnl_format_kind_any.
+///
+/// @param rnn_desc Output descriptor for LBR AUGRU primitive.
+/// @param prop_kind Propagation kind. Must be #dnnl_backward.
+/// @param direction RNN direction. See @ref dnnl_rnn_direction_t for more
+///     info.
+/// @param src_layer_desc Memory descriptor for the input vector.
+/// @param src_iter_desc Memory descriptor for the input recurrent hidden
+///     state vector.
+/// @param attention_desc Memory descriptor for the attention vector.
+/// @param weights_layer_desc Memory descriptor for the weights applied to the
+///     layer input.
+/// @param weights_iter_desc Memory descriptor for the weights applied to the
+///     recurrent input.
+/// @param bias_desc Bias memory descriptor.
+/// @param dst_layer_desc Memory descriptor for the output vector.
+/// @param dst_iter_desc Memory descriptor for the output recurrent hidden
+///     state vector.
+/// @param diff_src_layer_desc Memory descriptor for the diff of input vector.
+/// @param diff_src_iter_desc Memory descriptor for the diff of input recurrent
+///     hidden state vector.
+/// @param diff_attention_desc Memory descriptor for the diff of attention vector.
+/// @param diff_weights_layer_desc Memory descriptor for the diff of weights
+///     applied to the layer input.
+/// @param diff_weights_iter_desc Memory descriptor for the diff of weights
+///     applied to the recurrent input.
+/// @param diff_bias_desc Diff bias memory descriptor.
+/// @param diff_dst_layer_desc Memory descriptor for the diff of output
+///     vector.
+/// @param diff_dst_iter_desc Memory descriptor for the diff of output
+///     recurrent hidden state vector.
+/// @param flags Unused.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_lbr_augru_backward_desc_init(
+        dnnl_rnn_desc_t *rnn_desc, dnnl_prop_kind_t prop_kind,
+        dnnl_rnn_direction_t direction,
+        const dnnl_memory_desc_t *src_layer_desc,
+        const dnnl_memory_desc_t *src_iter_desc,
+        const dnnl_memory_desc_t *attention_desc,
+        const dnnl_memory_desc_t *weights_layer_desc,
+        const dnnl_memory_desc_t *weights_iter_desc,
+        const dnnl_memory_desc_t *bias_desc,
+        const dnnl_memory_desc_t *dst_layer_desc,
+        const dnnl_memory_desc_t *dst_iter_desc,
+        const dnnl_memory_desc_t *diff_src_layer_desc,
+        const dnnl_memory_desc_t *diff_src_iter_desc,
+        const dnnl_memory_desc_t *diff_attention_desc,
+        const dnnl_memory_desc_t *diff_weights_layer_desc,
+        const dnnl_memory_desc_t *diff_weights_iter_desc,
+        const dnnl_memory_desc_t *diff_bias_desc,
+        const dnnl_memory_desc_t *diff_dst_layer_desc,
+        const dnnl_memory_desc_t *diff_dst_iter_desc, unsigned flags);
+
 /// @} dnnl_api_rnn
 
 /// @addtogroup dnnl_api_matmul
@@ -3666,7 +3927,6 @@ dnnl_status_t DNNL_API dnnl_set_jit_profiling_jitdumpdir(const char *dir);
 /// @note
 ///     The ISAs are only partially ordered:
 ///         - SSE41 < AVX < AVX2,
-///         - AVX2 < AVX512_MIC < AVX512_MIC_4OPS,
 ///         - AVX2 < AVX512_CORE < AVX512_CORE_VNNI < AVX512_CORE_BF16
 ///           < AVX512_CORE_AMX,
 ///         - AVX2 < AVX2_VNNI.

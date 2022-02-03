@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019-2021 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -156,7 +156,7 @@ const nocopy_table_t xe_hp_f16_nocopy_table[] = {
 
 const nocopy_table_t xe_hp_bf16_nocopy_table[] = {
         // NN   NT     TN   TT
-        {{{512, 256}, {512, 512}}, {{512, 256}, {384, 384}}}};
+        {{{512, 256}, {768, 512}}, {{512, 256}, {384, 384}}}};
 
 const nocopy_table_t xe_hp_x8x8s32_nocopy_table[] = {
         // NN   NT     TN   TT
@@ -195,6 +195,9 @@ bool xe_hp_systolic_gemm_t::pd_t::use_nocopy() {
 
     if (any_prepacked_ || (packed_a_ && packed_b_)) return false;
 
+    // Use no-copy for gemv cases.
+    if (d->m() <= 1 || d->n() <= 1) return true;
+
     // Use no-copy implementation if one matrix is very small.
     if (d->m() < 32 && d->n() < 32) return true;
     if (d->m() < 32 && d->k() < 32) return true;
@@ -214,10 +217,14 @@ bool xe_hp_systolic_gemm_t::pd_t::use_nocopy() {
         int arch_idx = xehpc ? 1 : 0;
         bool bad_ld = false;
 
-        auto lda_bytes = d->lda() * types::data_type_size(d->a_type());
-        auto ldb_bytes = d->ldb() * types::data_type_size(d->b_type());
-        if (!packed_a_) bad_ld |= ((lda_bytes & 0xF) != 0);
-        if (!packed_b_) bad_ld |= ((ldb_bytes & 0xF) != 0);
+        if (!packed_a_) {
+            auto lda_bytes = d->lda() * types::data_type_size(d->a_type());
+            bad_ld |= ((lda_bytes & 0xF) != 0);
+        }
+        if (!packed_b_) {
+            auto ldb_bytes = d->ldb() * types::data_type_size(d->b_type());
+            bad_ld |= ((ldb_bytes & 0xF) != 0);
+        }
 
         auto table = all_tables[arch_idx][int(bad_ld)][type_idx];
         long mnl = table->mn_limit[d->transa()][d->transb()];
@@ -315,10 +322,15 @@ bool xe_hp_systolic_gemm_t::pd_t::set_default_formats(data_type_t dt) {
     if (a_any) {
         CHECK(memory_desc_init_by_tag(
                 desc_.b_desc, b_zp_ ? unpacked_tag : a_packed_tag));
-        auto &ld = desc_.b_desc.padded_dims[batch ? 1 : 0];
+        auto ld = desc_.b_desc.padded_dims[batch ? 1 : 0];
         ld = nice_ld(ld, int(sz));
-        desc_.b_desc.format_desc.blocking.strides[batch ? 2 : 1]
-                = unroll_m_ * ld;
+        auto &ostride
+                = desc_.b_desc.format_desc.blocking.strides[batch ? 2 : 1];
+        if (batch) {
+            auto &bstride = desc_.b_desc.format_desc.blocking.strides[0];
+            bstride = (bstride / ostride) * unroll_m_ * ld;
+        }
+        ostride = unroll_m_ * ld;
         packed_a_ = true;
     } else if (a_mdw.matches_one_of_tag(a_packed_tag, ab, ba, abc, acb)
             == undef)
@@ -328,24 +340,41 @@ bool xe_hp_systolic_gemm_t::pd_t::set_default_formats(data_type_t dt) {
         CHECK(memory_desc_init_by_tag(
                 desc_.a_desc, a_zp_ ? unpacked_tag : b_packed_tag));
         if (unroll_n_ > 16) { // Bug in zero-padding when unroll_n_ == 16
-            auto &ld = desc_.a_desc.padded_dims[batch ? 2 : 1];
+            auto ld = desc_.a_desc.padded_dims[batch ? 2 : 1];
             ld = nice_ld(ld, int(sz));
-            desc_.a_desc.format_desc.blocking.strides[batch ? 1 : 0]
-                    = unroll_n_ * ld;
+            auto &ostride
+                    = desc_.a_desc.format_desc.blocking.strides[batch ? 1 : 0];
+            if (batch) {
+                auto &bstride = desc_.a_desc.format_desc.blocking.strides[0];
+                bstride = (bstride / ostride) * unroll_n_ * ld;
+            }
+            ostride = unroll_n_ * ld;
         }
         packed_b_ = true;
     } else if (b_mdw.matches_one_of_tag(b_packed_tag, ab, ba, abc, acb)
             == undef)
         return false;
 
-    if (c_any)
+    if (c_any) {
         CHECK(memory_desc_init_by_tag(desc_.c_desc, c_packed_tag));
-    else if (c_mdw.matches_one_of_tag(c_packed_tag, ab, abc) == undef)
+        if (unroll_n_ > 16) { // Bug in zero-padding when unroll_n_ == 16
+            auto ld = desc_.c_desc.padded_dims[batch ? 2 : 1];
+            ld = nice_ld(ld, int(sz));
+            auto &ostride
+                    = desc_.c_desc.format_desc.blocking.strides[batch ? 1 : 0];
+            if (batch) {
+                auto &bstride = desc_.c_desc.format_desc.blocking.strides[0];
+                bstride = (bstride / ostride) * unroll_n_ * ld;
+            }
+            ostride = unroll_n_ * ld;
+        }
+        packed_c_ = true;
+    } else if (c_mdw.matches_one_of_tag(c_packed_tag, ab, abc) == undef)
         return false;
 
     packed_a_ = packed_a_ || a_mdw.matches_tag(a_packed_tag);
     packed_b_ = packed_b_ || b_mdw.matches_tag(b_packed_tag);
-    packed_c_ = c_mdw.matches_tag(b_packed_tag);
+    packed_c_ = packed_c_ || c_mdw.matches_tag(b_packed_tag);
 
     // No 16x16 copy kernels currently.
     if ((!packed_a_ && unroll_m_ == 16) || (!packed_b_ && unroll_n_ == 16))

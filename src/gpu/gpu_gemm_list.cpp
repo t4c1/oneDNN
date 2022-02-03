@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021 Intel Corporation
+* Copyright 2021-2022 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ namespace gpu {
 namespace {
 
 // clang-format off
-const impl_list_item_t impl_list[] = {
+constexpr impl_list_item_t impl_list[] = {
         INSTANCE(jit::xe_hp_systolic_gemm_t)
         INSTANCE(ocl::gemm_with_post_ops_t)
         INSTANCE(jit::gen_gemm_t)
