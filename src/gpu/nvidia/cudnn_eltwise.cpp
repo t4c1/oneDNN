@@ -19,8 +19,7 @@
 #include "gpu/nvidia/sycl_cuda_scoped_context.hpp"
 #include "gpu/nvidia/sycl_cuda_stream.hpp"
 #include "sycl/sycl_buffer_memory_storage.hpp"
-
-#include "sycl_cuda_helper.hpp"
+#include "sycl_cuda_memory_storage_helper.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -35,16 +34,10 @@ status_t cudnn_eltwise_fwd_t::execute(const exec_ctx_t &ctx) const {
             = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
     return cuda_stream->interop_task([&](::sycl::handler &cgh) {
-        auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
-                &CTX_IN_STORAGE(DNNL_ARG_SRC));
-        auto src_acc
-                = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(DNNL_ARG_SRC))>(
-                        src_mem, cgh);
-        auto *dst_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
-                &CTX_OUT_STORAGE(DNNL_ARG_DST));
-        auto dst_acc
-                = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(DNNL_ARG_DST))>(
-                        dst_mem, cgh);
+        auto *src_mem = CTX_IN_MEMORY(DNNL_ARG_SRC);
+        auto src_acc = CTX_IN_OPTIONAL_ACCESSOR(DNNL_ARG_SRC, src_mem);
+        auto *dst_mem = CTX_OUT_MEMORY(DNNL_ARG_DST);
+        auto dst_acc = CTX_OUT_OPTIONAL_ACCESSOR(DNNL_ARG_DST, dst_mem);
 
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             std::vector<void *> args;
@@ -69,19 +62,14 @@ status_t cudnn_eltwise_bwd_t::execute(const exec_ctx_t &ctx) const {
             = utils::downcast<nvidia::sycl_cuda_stream_t *>(ctx.stream());
 
     return cuda_stream->interop_task([&](::sycl::handler &cgh) {
-        auto *src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
-                &CTX_IN_STORAGE(DNNL_ARG_SRC));
-        auto src_acc
-                = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(DNNL_ARG_SRC))>(
-                        src_mem, cgh);
-        auto *diff_dst_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
-                &CTX_IN_STORAGE(DNNL_ARG_DIFF_DST));
-        auto diff_dst_acc = get_cudnn_accessor<decltype(CTX_IN_ACCESSOR(
-                DNNL_ARG_DIFF_DST))>(diff_dst_mem, cgh);
-        auto *diff_src_mem = static_cast<sycl::sycl_memory_storage_base_t *>(
-                &CTX_OUT_STORAGE(DNNL_ARG_DIFF_SRC));
-        auto diff_src_acc = get_cudnn_accessor<decltype(CTX_OUT_ACCESSOR(
-                DNNL_ARG_DIFF_SRC))>(diff_src_mem, cgh);
+        auto *src_mem = CTX_IN_MEMORY(DNNL_ARG_SRC);
+        auto src_acc = CTX_IN_OPTIONAL_ACCESSOR(DNNL_ARG_SRC, src_mem);
+        auto *diff_dst_mem = CTX_IN_MEMORY(DNNL_ARG_DIFF_DST);
+        auto diff_dst_acc
+                = CTX_IN_OPTIONAL_ACCESSOR(DNNL_ARG_DIFF_DST, diff_dst_mem);
+        auto *diff_src_mem = CTX_OUT_MEMORY(DNNL_ARG_DIFF_SRC);
+        auto diff_src_acc
+                = CTX_OUT_OPTIONAL_ACCESSOR(DNNL_ARG_DIFF_SRC, diff_src_mem);
 
         compat::host_task(cgh, [=](const compat::interop_handle &ih) {
             std::vector<void *> args;
