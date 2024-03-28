@@ -40,8 +40,8 @@ status_t ref_prelu_fwd_t::pd_t::init_conf() {
 
     conf_.block_size = 16;
     conf_.wg_size = 32;
-    conf_.work_amount = memory_desc_wrapper(src_md(0)).nelems();
-    conf_.work_amount_wei = memory_desc_wrapper(weights_md(0)).nelems();
+    conf_.work_amount = memory_desc_wrapper(src_md(0)).nelems(true);
+    conf_.work_amount_wei = memory_desc_wrapper(weights_md(0)).nelems(true);
     int work_per_wg = conf_.wg_size * conf_.block_size;
     int n_wgs = (conf_.work_amount + work_per_wg - 1) / work_per_wg;
     conf_.n_thr = n_wgs * conf_.wg_size;
@@ -61,7 +61,7 @@ status_t ref_prelu_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
         auto data = CTX_IN_SYCL_KERNEL_MEMORY(DNNL_ARG_SRC);
         auto weights = CTX_IN_SYCL_KERNEL_MEMORY(DNNL_ARG_WEIGHTS);
         auto dst = CTX_OUT_SYCL_KERNEL_MEMORY(DNNL_ARG_DST);
-        auto nelems_A = memory_desc_wrapper(pd()->src_md(0)).nelems();
+        auto nelems_A = memory_desc_wrapper(pd()->src_md(0)).nelems(true);
         int tot_work = nelems_A;
         prelu_fwd_kernel_vec_t prelu_fwd_kernel(
                 pd()->conf_, data, weights, dst);

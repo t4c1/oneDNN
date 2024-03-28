@@ -59,7 +59,7 @@ struct prelu_fwd_kernel_vec_t {
 
         for (int j = 0; j < max_supported_ndims; j++) {
             off[j] = 0;
-            dims_d[j] = (data_md().dims()[j] != 0) ? data_md().dims()[j] : 1;
+            dims_d[j] = (data_md().padded_dims()[j] != 0 && j<data_md().ndims()) ? data_md().padded_dims()[j] : 1;
         }
 
         balance211(work_amount, nthr, ithr, start, end);
@@ -290,7 +290,7 @@ private:
         dims_t dims_d, off;
         for (int i = 0; i < max_supported_ndims; i++) {
             off[i] = 0;
-            dims_d[i] = (data_md().dims()[i] != 0) ? data_md().dims()[i] : 1;
+            dims_d[i] = (data_md().padded_dims()[i] != 0 && i<data_md().ndims()) ? data_md().padded_dims()[i] : 1;
         }
 
         balance211(work_amount, nthr, ithr, start, end);
@@ -382,7 +382,7 @@ private:
         dims_t dims_d, off;
         for (int i = 0; i < max_supported_ndims; i++) {
             off[i] = 0;
-            dims_d[i] = (data_md().dims()[i] != 0) ? data_md().dims()[i] : 1;
+            dims_d[i] = (data_md().padded_dims()[i] != 0 && i<data_md().ndims()) ? data_md().padded_dims()[i] : 1;
         }
 
         balance211(work_amount, nthr, ithr, start, end);
@@ -443,8 +443,8 @@ private:
         size_t ithr = item.get_group(0) * conf_.wg_size + item.get_local_id();
         dims_t dims_d, dims_w;
         for (int i = 0; i < max_supported_ndims; i++) {
-            dims_d[i] = (data_md().dims()[i] != 0) ? data_md().dims()[i] : 1;
-            dims_w[i] = (weights_md().dims()[i] != 0) ? weights_md().dims()[i]
+            dims_d[i] = (data_md().padded_dims()[i] != 0 && i<data_md().ndims()) ? data_md().padded_dims()[i] : 1;
+            dims_w[i] = (weights_md().padded_dims()[i] != 0) ? weights_md().padded_dims()[i]
                                                       : 1;
         }
 

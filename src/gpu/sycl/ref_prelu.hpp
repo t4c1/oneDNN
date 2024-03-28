@@ -48,9 +48,7 @@ struct ref_prelu_fwd_t : public sycl_gpu_primitive_t {
             const memory_desc_wrapper weights_d(weights_md(0));
             const memory_desc_wrapper dst_d(dst_md(0));
 
-            const bool ok = is_fwd() && set_default_formats()
-                    && (src_md(0)->format_desc.blocking.inner_nblks == 0)
-                    && (weights_md(0)->format_desc.blocking.inner_nblks == 0);
+            const bool ok = is_fwd() && set_default_formats();
 
             if (!ok) return status::unimplemented;
             return init_conf();
