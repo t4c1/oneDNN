@@ -151,17 +151,19 @@ private:
 struct prelu_bwd_kernel_vec_t {
     static constexpr int vec_len = 8;
 
+    ::sycl::stream st;
+
     prelu_bwd_kernel_vec_t(const sycl_prelu_conf_t &conf,
             sycl_in_memory_arg_t &data, sycl_out_memory_arg_t &diff_data,
             sycl_in_memory_arg_t &weights, sycl_out_memory_arg_t &diff_weights,
-            sycl_in_memory_arg_t &diff_dst, sycl_out_memory_arg_t &scratchpad)
+            sycl_in_memory_arg_t &diff_dst, sycl_out_memory_arg_t &scratchpad, ::sycl::stream s)
         : conf_(conf)
         , data_(data)
         , diff_data_(diff_data)
         , weights_(weights)
         , diff_weights_(diff_weights)
         , diff_dst_(diff_dst)
-        , scratchpad_(scratchpad) {}
+        , scratchpad_(scratchpad), st(s) {}
 
     void operator()(::sycl::nd_item<1> item) const {
         size_t ithr = item.get_group(0) * conf_.wg_size + item.get_local_id();
@@ -290,7 +292,8 @@ private:
         dims_t dims_d, off;
         for (int i = 0; i < max_supported_ndims; i++) {
             off[i] = 0;
-            dims_d[i] = (data_md().padded_dims()[i] != 0 && i<data_md().ndims()) ? data_md().padded_dims()[i] : 1;
+            dims_d[i] = (data_md().padded_dims()[i] != 0 && i<data_md().padded_dims()[i]) ? data_md().padded_dims()[i] : 1;
+            st << "dims_d[" << i << "] " << dims_d[i] << "\n";
         }
 
         balance211(work_amount, nthr, ithr, start, end);
@@ -335,6 +338,14 @@ private:
             float diff_weight_res = src_val > 0 ? 0 : (diff_dst_val * src_val);
             store_float_value(
                     data_md().data_type(), diff_src_res, diff_src, data_off);
+            st << "@" << iwork
+              << " diff_src_res " << diff_src_res 
+              << " diff_weight_res " << diff_weight_res 
+              << " src_val " << src_val 
+              << " weights_val " << weights_val 
+              << " diff_dst_val " << diff_dst_val 
+              << " data_off " << data_off 
+              << "\n" << ::sycl::stream_manipulator::flush;
 
             s = s + diff_weight_res;
             if (++offset_buf == data_size) {

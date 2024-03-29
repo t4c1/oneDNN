@@ -91,8 +91,8 @@ status_t ref_prelu_bwd_t::pd_t::init_conf() {
     conf_.mask = utils::get_dims_mask(data_d.dims(), weights_d.dims(), ndims());
     conf_.block_size = 16;
     conf_.wg_size = 32;
-    conf_.work_amount_src = memory_desc_wrapper(src_md(0)).nelems();
-    conf_.work_amount = memory_desc_wrapper(weights_md(0)).nelems();
+    conf_.work_amount_src = memory_desc_wrapper(src_md(0)).nelems(true);
+    conf_.work_amount = memory_desc_wrapper(weights_md(0)).nelems(true);
     conf_.work_load = conf_.work_amount_src / conf_.work_amount;
     int work_per_wg = conf_.wg_size * conf_.block_size;
     int n_wgs = (conf_.work_amount_src + work_per_wg - 1) / work_per_wg;
@@ -116,11 +116,12 @@ status_t ref_prelu_bwd_t::execute_backward(const exec_ctx_t &ctx) const {
         auto diff_weights = CTX_OUT_SYCL_KERNEL_MEMORY(DNNL_ARG_DIFF_WEIGHTS);
         auto diff_dst = CTX_IN_SYCL_KERNEL_MEMORY(DNNL_ARG_DIFF_DST);
         auto scratchpad = CTX_OUT_SYCL_KERNEL_MEMORY(DNNL_ARG_SCRATCHPAD);
-        auto nelems_A = memory_desc_wrapper(pd()->src_md(0)).nelems();
+        auto nelems_A = memory_desc_wrapper(pd()->src_md(0)).nelems(true);
         int tot_work = nelems_A;
 
+        ::sycl::stream s(10240,1024,cgh);
         prelu_bwd_kernel_vec_t prelu_bwd_kernel(pd()->conf_, data, diff_data,
-                weights, diff_weights, diff_dst, scratchpad);
+                weights, diff_weights, diff_dst, scratchpad, s);
         const int block_size = pd()->conf_.block_size;
         const int wg_size = pd()->conf_.wg_size;
         int work_per_wg = wg_size * block_size;

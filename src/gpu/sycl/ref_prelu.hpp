@@ -86,8 +86,6 @@ struct ref_prelu_bwd_t : public sycl_gpu_primitive_t {
             const memory_desc_wrapper diff_dst_d(diff_dst_md(0));
 
             const bool ok = !is_fwd() && set_default_formats()
-                    && (src_md(0)->format_desc.blocking.inner_nblks == 0)
-                    && (weights_md(0)->format_desc.blocking.inner_nblks == 0)
                     && diff_src_md(0)->data_type == src_md(0)->data_type
                     && diff_weights_md(0)->data_type
                             == weights_md(0)->data_type;
