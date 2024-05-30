@@ -49,6 +49,27 @@ struct sycl_binary_conf_t {
     sycl_post_ops_t post_ops;
 };
 
+struct sycl_convolution_conf_t {
+    xpu::sycl::md_t data_md;
+    xpu::sycl::md_t dst_md;
+    xpu::sycl::md_t weights_md;
+    xpu::sycl::md_t bias_md;
+    xpu::sycl::md_t diff_data_md;
+    xpu::sycl::md_t diff_dst_md;
+    xpu::sycl::md_t diff_weights_md;
+
+    bool do_scale_data;
+    bool do_scale_weights;
+
+    int ndims;
+
+    int block_size;
+    int wg_size;
+    int wk_size;
+
+    sycl_post_ops_t post_ops;
+};
+
 struct sycl_eltwise_conf_t {
     prop_kind_t prop_kind;
     xpu::sycl::md_t src_md;
