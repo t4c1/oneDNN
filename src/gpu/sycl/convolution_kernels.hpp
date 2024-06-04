@@ -136,12 +136,14 @@ struct convolution_kernel_vec_t {
                 s << "\n\n\non idx " << idx << "\n";
 
                 const int n = off[0];
-                const int oc = off[1];
+                const int oc_tot = off[1];
+                const int oc = oc_tot % OC;
+                const int g = oc_tot / OC;
 
                 const int od = off[2];
                 const int oh = off[3];
                 const int ow = off[4];
-                s << "n " << n << " oc " << oc << " od " << od << " oh " << oh << " ow " << ow << "\n";
+                s << "n " << n << " g " << g << " oc " << oc << " od " << od << " oh " << oh << " ow " << ow << "\n";
 
                 
                 //filter strides
@@ -159,21 +161,15 @@ struct convolution_kernel_vec_t {
                                 const int ih = oh * SH - PH + kh * DH;
                                 const int iw = ow * SW - PW + kw * DW;
 
-                                //s << "dd2 " << data_dims[2] << " dd3 " << data_dims[3] << " dd4 " << data_dims[4] << "\n";
-
                                 if (id < 0 || id >= data_dims[2] || ih < 0 || ih >= data_dims[3] || iw < 0
                                         || iw >= data_dims[4]){
-                                    //s << "continue\n";
                                     continue;
                                 }
                                 s << "n " << n << " ic " << ic << " id " << id << " ih " << ih << " iw " << iw << "\n";
-                                //s << "pass\n";
 
-                                //TODO groups
-                                dims_t off_data{n, ic, id, ih, iw};
+                                dims_t off_data{n, g * IC + ic, id, ih, iw};
                                 const int data_idx = data_md().off_v(off_data);
                                 
-                                int g = 0;
                                 dims_t off_weights{g, oc, ic, kd, kh, kw};
                                 const int weights_idx = weights_md().off_v(off_weights);
                                 s << "w off "
@@ -210,8 +206,8 @@ struct convolution_kernel_vec_t {
 
                 //bias
                 auto bias = load_float_value(
-                                        bias_md().data_type(), bias_ptr(), oc);
-                s << "load bias " << bias << " from " << oc << "\n";
+                                        bias_md().data_type(), bias_ptr(), oc_tot);
+                s << "load bias " << bias << " from " << oc_tot << "\n";
                 accumulator += bias;
 
 
