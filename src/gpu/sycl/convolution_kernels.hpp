@@ -93,9 +93,12 @@ struct convolution_kernel_vec_t {
 
         //kernel center offsets
         //padding?
-        const int PD = (KD-1) / 2;
-        const int PH = (KH-1) / 2;
-        const int PW = (KW-1) / 2;
+        //const int PD = (KD-1) / 2;
+        //const int PH = (KH-1) / 2;
+        //const int PW = (KW-1) / 2;
+        const int PD = conf_.padding[0];
+        const int PH = conf_.padding[1];
+        const int PW = conf_.padding[2];
         for (int i = 0; i < conf_.block_size; i++) {
             int idx = base_idx + i;
             if (idx < conf_.wk_size) {
@@ -127,12 +130,10 @@ struct convolution_kernel_vec_t {
                     << dst_md().dims()[4] << " "
                     << dst_md().dims()[5] << "\n";
                 }
-                //utils::l_dims_by_l_offset(
-                  //      off, idx, dst_dims, max_supported_ndims);
                 for (int i = 0; i < max_supported_ndims; i++) {
                     off[i] = idx / dst_strides[i] % dst_dims[i];
                 }
-                s << "\non idx " << idx << "\n";
+                s << "\n\n\non idx " << idx << "\n";
 
                 const int n = off[0];
                 const int oc = off[1];
@@ -195,7 +196,7 @@ struct convolution_kernel_vec_t {
                                         data_md().data_type(), data_ptr(), data_idx);
                                 auto weight = load_float_value(
                                         weights_md().data_type(), weights_ptr(), weights_idx);
-                                s << "load d " << data << " from " << data_idx << ", w " << weight << " from " << weights_idx << "\n";
+                                s << "load d " << data << " from " << data_idx << ", w " << weight << " from " << weights_idx << "\n\n";
                                 accumulator += data * weight;
 
                                 //TODO zeropoints

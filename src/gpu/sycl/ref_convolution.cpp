@@ -47,6 +47,20 @@ status_t ref_convolution_fwd_t::pd_t::init_conf() {
             = !attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
 
     conf_.post_ops = sycl_post_ops_t(attr());
+    
+    //conf_.padding = {padFront(), padT(), padL()};
+    auto pad = desc()->padding[0];
+    //utils::array_copy(conf_.padding, pad,3);
+    conf_.padding[0] = static_cast<int>(pad[0]);
+    conf_.padding[1] = static_cast<int>(pad[1]);
+    conf_.padding[2] = static_cast<int>(pad[2]);
+    std::cout << "pad "
+              << padFront() << " "
+              << padBack() << " "
+              << padT() << " "
+              << padB() << " "
+              << padL() << " "
+              << padR() << "\n";
     return status::success;
 }
 
