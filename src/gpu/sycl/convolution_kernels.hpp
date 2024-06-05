@@ -73,21 +73,31 @@ struct convolution_kernel_vec_t {
             dst_dims[i] = (i < dst_md().ndims()) ? dst_md().dims()[i] : 1;
             dst_strides[i] = (i < dst_md().ndims()) ? dst_md().strides()[i] : INT_MAX;
         }
+
+        bool no_groups = weights_md().ndims() == data_md().ndims();
         
         //input strides
         const int SD = conf_.strides[0];
         const int SH = conf_.strides[1];
         const int SW = conf_.strides[2];
 
-        const int G = weights_dims[0];
+        int G = weights_dims[0];
         
         //per group
-        const int OC = weights_dims[1];
-        const int IC = weights_dims[2];
+        int OC = weights_dims[1];
+        int IC = weights_dims[2];
 
-        const int KD = weights_dims[3];
-        const int KH = weights_dims[4];
-        const int KW = weights_dims[5];
+        int KD = weights_dims[3];
+        int KH = weights_dims[4];
+        int KW = weights_dims[5];
+        if(no_groups){
+            G = 1;
+            OC = weights_dims[0];
+            IC = weights_dims[1];
+            KD = weights_dims[2];
+            KH = weights_dims[3];
+            KW = weights_dims[4];
+        }
 
         //padding?
         const int PD = conf_.padding[0];
@@ -96,7 +106,7 @@ struct convolution_kernel_vec_t {
         for (int i = 0; i < conf_.block_size; i++) {
             int idx = base_idx + i;
             if (idx < conf_.wk_size) {
-                if(idx == 0){
+                /*if(idx == 0){
                     s << "G " << G << " IC " << IC << " OC " << OC << "\n";
                     s << "KD " << KD << " KH " << KH << " KW " << KW << "\n";
                     s << "PD " << PD << " PH " << PH << " PW " << PW << "\n";
@@ -124,11 +134,11 @@ struct convolution_kernel_vec_t {
                     << dst_md().dims()[3] << " "
                     << dst_md().dims()[4] << " "
                     << dst_md().dims()[5] << "\n";
-                }
+                }*/
                 for (int i = 0; i < max_supported_ndims; i++) {
                     off[i] = idx / dst_strides[i] % dst_dims[i];
                 }
-                s << "\n\n\non idx " << idx << "\n";
+                //s << "\n\n\non idx " << idx << "\n";
 
                 const int n = off[0];
                 const int oc_tot = off[1];
@@ -138,7 +148,7 @@ struct convolution_kernel_vec_t {
                 const int od = off[2];
                 const int oh = off[3];
                 const int ow = off[4];
-                s << "n " << n << " g " << g << " oc " << oc << " od " << od << " oh " << oh << " ow " << ow << "\n";
+                //s << "n " << n << " g " << g << " oc " << oc << " od " << od << " oh " << oh << " ow " << ow << "\n";
 
                 
                 //dilation?
@@ -159,14 +169,14 @@ struct convolution_kernel_vec_t {
                                         || iw >= data_dims[4]){
                                     continue;
                                 }
-                                s << "n " << n << " ic " << ic << " id " << id << " ih " << ih << " iw " << iw << "\n";
+                                //s << "n " << n << " ic " << ic << " id " << id << " ih " << ih << " iw " << iw << "\n";
 
                                 dims_t off_data{n, g * IC + ic, id, ih, iw};
                                 const int data_idx = data_md().off_v(off_data);
-                                
                                 dims_t off_weights{g, oc, ic, kd, kh, kw};
-                                const int weights_idx = weights_md().off_v(off_weights);
-                                s << "w off "
+                                dims_t off_weights_no_groups{oc, ic, kd, kh, kw};
+                                const int weights_idx = weights_md().off_v(no_groups ? off_weights_no_groups : off_weights);
+                                /*s << "w off "
                                     << off_weights[0] << " "
                                     << off_weights[1] << " "
                                     << off_weights[2] << " "
@@ -180,13 +190,13 @@ struct convolution_kernel_vec_t {
                                     << off_data[2] << " "
                                     << off_data[3] << " "
                                     << off_data[4] << " "
-                                    << off_data[5] << "\n";
+                                    << off_data[5] << "\n";*/
                                 
                                 auto data = load_float_value(
                                         data_md().data_type(), data_ptr(), data_idx);
                                 auto weight = load_float_value(
                                         weights_md().data_type(), weights_ptr(), weights_idx);
-                                s << "load d " << data << " from " << data_idx << ", w " << weight << " from " << weights_idx << "\n\n";
+                                //s << "load d " << data << " from " << data_idx << ", w " << weight << " from " << weights_idx << "\n\n";
                                 accumulator += data * weight;
 
                                 //TODO zeropoints
@@ -195,14 +205,16 @@ struct convolution_kernel_vec_t {
                         }
                     }
                 }
-                s << "val " << accumulator << "\n";
+                //s << "val " << accumulator << "\n";
                 //TODO scales
 
                 //bias
-                auto bias = load_float_value(
-                                        bias_md().data_type(), bias_ptr(), oc_tot);
-                s << "load bias " << bias << " from " << oc_tot << "\n";
-                accumulator += bias;
+                if(bias_md().ndims()!=0){
+                    auto bias = load_float_value(
+                                            bias_md().data_type(), bias_ptr(), oc_tot);
+                    accumulator += bias;
+                }
+                //s << "load bias " << bias << " from " << oc_tot << "\n";
 
                 auto dst = load_float_value(
                         dst_md().data_type(), dst_ptr(), idx);
@@ -211,7 +223,7 @@ struct convolution_kernel_vec_t {
                 //if (conf_.do_scale_src1) src1 *= sm_1;
 
                 accumulator = conf_.post_ops.apply(accumulator, dst);
-                s << "store on " << idx << " val " << accumulator << "\n";
+                //s << "store on " << idx << " val " << accumulator << "\n";
                 store_float_value(
                         dst_md().data_type(), accumulator, dst_ptr(), idx);
             }

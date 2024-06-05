@@ -69,6 +69,7 @@ struct sycl_convolution_conf_t {
     int block_size;
     int wg_size;
     int wk_size;
+    bool has_groups;
 
     sycl_post_ops_t post_ops;
 };
