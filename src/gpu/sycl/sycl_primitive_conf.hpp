@@ -59,6 +59,7 @@ struct sycl_convolution_conf_t {
     xpu::sycl::md_t diff_weights_md;
 
     int padding[3];
+    int strides[3];
 
     bool do_scale_data;
     bool do_scale_weights;
