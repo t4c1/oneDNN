@@ -36,7 +36,11 @@ struct convolution_kernel_vec_t {
             xpu::sycl::in_memory_arg_t &data, xpu::sycl::in_memory_arg_t &weights,
             xpu::sycl::in_memory_arg_t &bias, xpu::sycl::out_memory_arg_t &dst,
             xpu::sycl::in_memory_arg_t &data_scale,
-            xpu::sycl::in_memory_arg_t &weights_scale, data_type_t scales_dt, ::sycl::stream s)
+            xpu::sycl::in_memory_arg_t &weights_scale, 
+            xpu::sycl::in_memory_arg_t &dst_scale, 
+            xpu::sycl::in_memory_arg_t &data_zeropoints,
+            xpu::sycl::in_memory_arg_t &dst_zeropoints, data_type_t scales_data_dt, 
+            data_type_t scales_weights_dt/*, ::sycl::stream s*/)
         : conf_(conf)
         , data_(data)
         , weights_(weights)
@@ -44,7 +48,11 @@ struct convolution_kernel_vec_t {
         , dst_(dst)
         , data_scale_(data_scale)
         , weights_scale_(weights_scale)
-        , scales_dt_(scales_dt), s(s) {}
+        , dst_scale_(dst_scale)
+        , data_zeropoints_(data_zeropoints)
+        , dst_zeropoints_(dst_zeropoints)
+        , scales_data_dt_(scales_data_dt)
+        , scales_weights_dt_(scales_weights_dt)/*, s(s)*/ {}
 
     void operator()(::sycl::nd_item<1> item) const {
         auto sg = item.get_sub_group();
@@ -59,11 +67,15 @@ struct convolution_kernel_vec_t {
         //size_t sg_base_idx = (wg_offset_t + sg_offset_t) * conf_.block_size;
 
         const float sm_data = (conf_.do_scale_data
-                        ? load_float_value(scales_dt_, data_scale_ptr(), 0)
+                        ? load_float_value(scales_data_dt_, data_scale_ptr(), 0)
                         : 1.f);
 
-        const float sm_weights = (conf_.do_scale_weights
-                        ? load_float_value(scales_dt_, weights_scale_ptr(), 0)
+        float sm_weights = (conf_.do_scale_weights && conf_.single_weight_scale
+                        ? load_float_value(scales_weights_dt_, weights_scale_ptr(), 0)
+                        : 1.f);
+                        
+        const float sm_dst = (conf_.do_scale_dst
+                        ? load_float_value(data_type::f32, dst_scale_ptr(), 0)
                         : 1.f);
 
         dims_t data_dims, weights_dims, dst_dims, dst_strides, off;
@@ -103,6 +115,15 @@ struct convolution_kernel_vec_t {
         const int PD = conf_.padding[0];
         const int PH = conf_.padding[1];
         const int PW = conf_.padding[2];
+        
+        //dilation?
+        //const int DD = 1;
+        //const int DH = 1;
+        //const int DW = 1;
+        const int DD = conf_.dilation[0];
+        const int DH = conf_.dilation[1];
+        const int DW = conf_.dilation[2];
+
         for (int i = 0; i < conf_.block_size; i++) {
             int idx = base_idx + i;
             if (idx < conf_.wk_size) {
@@ -150,20 +171,14 @@ struct convolution_kernel_vec_t {
                 const int ow = off[4];
                 //s << "n " << n << " g " << g << " oc " << oc << " od " << od << " oh " << oh << " ow " << ow << "\n";
 
-                
-                //dilation?
-                const int DD = 1;
-                const int DH = 1;
-                const int DW = 1;
-
                 float accumulator = 0;
                 for (int ic = 0; ic < IC; ++ic) {
                     for (int kd = 0; kd < KD; ++kd) {
                         for (int kh = 0; kh < KH; ++kh) {
                             for (int kw = 0; kw < KW; ++kw) {
-                                const int id = od * SD - PD + kd * DD;
-                                const int ih = oh * SH - PH + kh * DH;
-                                const int iw = ow * SW - PW + kw * DW;
+                                const int id = od * SD - PD + kd * (1 + DD);
+                                const int ih = oh * SH - PH + kh * (1 + DH);
+                                const int iw = ow * SW - PW + kw * (1 + DW);
 
                                 if (id < 0 || id >= data_dims[2] || ih < 0 || ih >= data_dims[3] || iw < 0
                                         || iw >= data_dims[4]){
@@ -197,17 +212,30 @@ struct convolution_kernel_vec_t {
                                 auto weight = load_float_value(
                                         weights_md().data_type(), weights_ptr(), weights_idx);
                                 //s << "load d " << data << " from " << data_idx << ", w " << weight << " from " << weights_idx << "\n\n";
+                                if(conf_.use_data_zeropoints){
+                                    int zpoint_idx = conf_.single_data_zeropoint ? 0 : g * IC + ic;
+                                    auto data_zeropoint = load_float_value(
+                                            data_type::s32, data_zeropoint_ptr(), zpoint_idx);
+                                    //s << "data " << data << " zp " << data_zeropoint << "\n";
+                                    data -= data_zeropoint;
+                                }
                                 accumulator += data * weight;
-
-                                //TODO zeropoints
 
                             }
                         }
                     }
                 }
                 //s << "val " << accumulator << "\n";
-                //TODO scales
-
+                //scales
+                if(conf_.do_scale_data){
+                    accumulator *= sm_data;
+                }
+                if(conf_.do_scale_weights){
+                    if(!conf_.single_weight_scale){
+                        sm_weights = load_float_value(scales_weights_dt_, weights_scale_ptr(), oc_tot);
+                    }
+                    accumulator *= sm_weights;
+                }
                 //bias
                 if(bias_md().ndims()!=0){
                     auto bias = load_float_value(
@@ -221,8 +249,21 @@ struct convolution_kernel_vec_t {
 
                 //if (conf_.do_scale_src0) src0 *= sm_0;
                 //if (conf_.do_scale_src1) src1 *= sm_1;
-
+                //s << "idx " << idx << " acc " << accumulator << " dst " << dst;
                 accumulator = conf_.post_ops.apply(accumulator, dst);
+                if(conf_.do_scale_dst){
+                    //s << " acc2 " << accumulator << " sm_dst " << sm_dst;
+                    accumulator /= sm_dst;
+                }
+                
+                if(conf_.use_dst_zeropoints){
+                    int zpoint_idx = conf_.single_dst_zeropoint ? 0 : oc_tot;
+                    auto dst_zeropoint = load_float_value(
+                            data_type::s32, dst_zeropoint_ptr(), zpoint_idx);
+                    //s << " acc3 " << accumulator << " dst_zeropoint " << dst_zeropoint; 
+                    accumulator += dst_zeropoint;
+                }
+                //s << "\n";
                 //s << "store on " << idx << " val " << accumulator << "\n";
                 store_float_value(
                         dst_md().data_type(), accumulator, dst_ptr(), idx);
@@ -245,6 +286,15 @@ private:
     }
     float *weights_scale_ptr() const {
         return static_cast<float *>(weights_scale_.get_pointer());
+    }
+    float *dst_scale_ptr() const {
+        return static_cast<float *>(dst_scale_.get_pointer());
+    }
+    int *data_zeropoint_ptr() const {
+        return static_cast<int *>(data_zeropoints_.get_pointer());
+    }
+    int *dst_zeropoint_ptr() const {
+        return static_cast<int *>(dst_zeropoints_.get_pointer());
     }
 
     inline void l_dims_by_l_offset(dims_t dims_pos, dim_t l_offset,
@@ -270,8 +320,12 @@ private:
     xpu::sycl::out_memory_arg_t dst_;
     xpu::sycl::in_memory_arg_t data_scale_;
     xpu::sycl::in_memory_arg_t weights_scale_;
-    data_type_t scales_dt_;
-    ::sycl::stream s;
+    xpu::sycl::in_memory_arg_t dst_scale_;
+    xpu::sycl::in_memory_arg_t data_zeropoints_;
+    xpu::sycl::in_memory_arg_t dst_zeropoints_;
+    data_type_t scales_data_dt_;
+    data_type_t scales_weights_dt_;
+    //::sycl::stream s;
 };
 
 } // namespace sycl

@@ -48,13 +48,14 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
             const memory_desc_wrapper dst_d(dst_md());
 
             const bool ok = is_fwd() 
+                    && check_work_amount(weights_d)
                     && set_default_formats()
                     //&& set_default_params() == status::success
                     && attr_.set_default_formats(dst_md()) == status::success
                     && check_data_types(data_d, weights_d, dst_d)
                     && check_formats(data_d, weights_d, dst_d)
                     && attr()->has_default_values(
-                            sm::scales_runtime | sm::post_ops)
+                            sm::scales_runtime | sm::zero_points_runtime | sm::post_ops)
                     && IMPLICATION(!attr()->scales_.has_default_values(),
                             check_scales_mask())
                     && post_ops_ok();
@@ -79,11 +80,20 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
 
         bool check_scales_mask() const {
             const std::vector<int> supported_args
-                    = {DNNL_ARG_SRC_0, DNNL_ARG_SRC_1};
+                    = {DNNL_ARG_SRC_0, DNNL_ARG_WEIGHTS, DNNL_ARG_DST};
             return attr_scales_ok(supported_args);
         }
 
         bool post_ops_ok() const {
+            for (int i = 0; i < attr()->post_ops_.len(); i++) {
+                const auto &e = attr()->post_ops_.entry_[i];
+                if (!IMPLICATION(e.is_eltwise(),
+                            utils::one_of(e.eltwise.alg, alg_kind::eltwise_relu, 
+                                    alg_kind::eltwise_linear, alg_kind::eltwise_clip,
+                                    alg_kind::eltwise_clip_v2, alg_kind::eltwise_hardswish))) {
+                    return false;
+                }
+            }
             // Dw conv post-ops are not supported.
             return attr()->post_ops_.len() <= sycl_post_ops_t::max_post_ops
                     && attr()->post_ops_.has_default_values(
@@ -102,11 +112,11 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
             const auto dst_dt = dst.data_type();
 
             for (auto t : {src0_dt, src1_dt, dst_dt}) {
-                if (!utils::one_of(t, f32, bf16, f16, s8, u8)) return false;
+                if (!utils::one_of(t, /*f64,*/ f32, bf16, f16, s32, s8, u8)) return false;
             }
 
-            return IMPLICATION(utils::one_of(bf16, src0_dt, src1_dt, dst_dt),
-                    src0_dt == dst_dt && src1_dt == dst_dt);
+            return true/*IMPLICATION(utils::one_of(bf16, src0_dt, src1_dt, dst_dt),
+                    src0_dt == dst_dt && src1_dt == dst_dt)*/;
         }
 
         static bool check_formats(const memory_desc_wrapper &src0,
@@ -118,6 +128,14 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
                 if (!mdw.is_plain()) { return false; }
             }
             return true;
+        }
+
+        bool check_work_amount(const memory_desc_wrapper &weights){
+            auto elems = weights.nelems();
+            auto works_per_output = elems / OC();
+            // arbitrarily chosen threshold to avoid unreasonably long runtimes
+            // such cases should use a different implementation
+            return works_per_output < 100000;
         }
     };
 

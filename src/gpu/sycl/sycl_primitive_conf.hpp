@@ -60,9 +60,17 @@ struct sycl_convolution_conf_t {
 
     int padding[3];
     int strides[3];
+    int dilation[3];
 
     bool do_scale_data;
     bool do_scale_weights;
+    bool do_scale_dst;
+    bool single_weight_scale;
+    
+    bool use_data_zeropoints;
+    bool use_dst_zeropoints;
+    bool single_data_zeropoint;
+    bool single_dst_zeropoint;
 
     int ndims;
 
