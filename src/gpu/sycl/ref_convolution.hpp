@@ -31,15 +31,15 @@ namespace impl {
 namespace gpu {
 namespace sycl {
 
-struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
-    using sycl_gpu_primitive_t::sycl_gpu_primitive_t;
+struct ref_convolution_fwd_t : public gpu::sycl::primitive_t {
+    using gpu::sycl::primitive_t::primitive_t;
 
     struct pd_t : public convolution_fwd_pd_t {
         using convolution_fwd_pd_t::convolution_fwd_pd_t;
 
         DECLARE_COMMON_PD_T("dpcpp:ref:any", ref_convolution_fwd_t);
 
-        status_t init(engine_t *engine) {
+        status_t init(impl::engine_t *engine) {
             using namespace data_type;
             using sm = primitive_attr_t::skip_mask_t;
 
@@ -110,7 +110,7 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
             const auto dst_dt = dst.data_type();
 
             for (auto t : {src0_dt, src1_dt, dst_dt}) {
-                if (!utils::one_of(t, /*f64,*/ f32, bf16, f16, s32, s8, u8)) return false;
+                if (!utils::one_of(t, f64, f32, bf16, f16, s32, s8, u8)) return false;
             }
 
             return true;
@@ -129,19 +129,19 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
 
         bool check_work_amount(const memory_desc_wrapper &weights){
             auto elems = weights.nelems();
-            auto works_per_output = elems / OC();
+            auto work_per_output = elems / OC();
             // arbitrarily chosen threshold to avoid unreasonably long runtimes
             // such cases should use a different implementation
-            return works_per_output < 100000;
+            return work_per_output < 200000;
         }
     };
 
-    status_t init(engine_t *engine) override;
+    status_t init(impl::engine_t *engine) override;
     status_t execute(const exec_ctx_t &ctx) const override;
 
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
-    intel::compute::kernel_t kernel_;
+    kernel_t kernel_;
 };
 
 } // namespace sycl
