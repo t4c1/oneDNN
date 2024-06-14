@@ -26,15 +26,15 @@ namespace impl {
 namespace gpu {
 namespace sycl {
 
-struct ref_sycl_lrn_fwd_t : public sycl_gpu_primitive_t {
-    using sycl_gpu_primitive_t::sycl_gpu_primitive_t;
+struct ref_sycl_lrn_fwd_t : public gpu::sycl::primitive_t {
+    using gpu::sycl::primitive_t::primitive_t;
 
     struct pd_t : public gpu_lrn_fwd_pd_t {
         using gpu_lrn_fwd_pd_t::gpu_lrn_fwd_pd_t;
 
         DECLARE_COMMON_PD_T("dpcpp:ref:any", ref_sycl_lrn_fwd_t);
 
-        status_t init(engine_t *engine) {
+        status_t init(impl::engine_t *engine) {
             using namespace format_tag;
             using namespace data_type;
 
@@ -61,7 +61,7 @@ struct ref_sycl_lrn_fwd_t : public sycl_gpu_primitive_t {
         status_t init_conf();
     };
 
-    status_t init(engine_t *engine) override;
+    status_t init(impl::engine_t *engine) override;
     status_t execute(const exec_ctx_t &ctx) const override {
         return execute_forward(ctx);
     }
@@ -69,18 +69,18 @@ struct ref_sycl_lrn_fwd_t : public sycl_gpu_primitive_t {
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
     status_t execute_forward(const exec_ctx_t &ctx) const;
-    intel::compute::kernel_t kernel_;
+    kernel_t kernel_;
 };
 
-struct ref_sycl_lrn_bwd_t : public sycl_gpu_primitive_t {
-    using sycl_gpu_primitive_t::sycl_gpu_primitive_t;
+struct ref_sycl_lrn_bwd_t : public gpu::sycl::primitive_t {
+    using gpu::sycl::primitive_t::primitive_t;
 
     struct pd_t : public gpu_lrn_bwd_pd_t {
         using gpu_lrn_bwd_pd_t::gpu_lrn_bwd_pd_t;
 
         DECLARE_COMMON_PD_T("dpcpp:ref:any", ref_sycl_lrn_bwd_t);
 
-        status_t init(engine_t *engine) {
+        status_t init(impl::engine_t *engine) {
             using namespace format_tag;
             using namespace data_type;
 
@@ -107,7 +107,7 @@ struct ref_sycl_lrn_bwd_t : public sycl_gpu_primitive_t {
         status_t init_conf();
     };
 
-    status_t init(engine_t *engine) override;
+    status_t init(impl::engine_t *engine) override;
     status_t execute(const exec_ctx_t &ctx) const override {
         return execute_backward(ctx);
     }
@@ -115,7 +115,7 @@ struct ref_sycl_lrn_bwd_t : public sycl_gpu_primitive_t {
 private:
     status_t execute_backward(const exec_ctx_t &ctx) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
-    intel::compute::kernel_t kernel_;
+    kernel_t kernel_;
 };
 
 } // namespace sycl

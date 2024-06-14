@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "common/c_types_map.hpp"
 #include "gpu/intel/jit/ir/problem.hpp"
 
 namespace dnnl {
@@ -38,16 +39,16 @@ const std::vector<prb_dim_t> &conv_layout_dims(
 
 template <typename T>
 T &&pick_a(prop_kind_t prop, T &&src, T &&wei, T &&dst) {
-    return utils::one_of(prop, prop_kind::forward, prop_kind::backward_weights)
-            ? std::forward<T>(src)
-            : std::forward<T>(dst);
+    bool is_fwd = (prop == prop_kind::forward);
+    bool is_bwd_w = (prop == prop_kind::backward_weights);
+    return std::forward<T>(is_fwd || is_bwd_w ? src : dst);
 }
 
 template <typename T>
 T &&pick_b(prop_kind_t prop, T &&src, T &&wei, T &&dst) {
-    return utils::one_of(prop, prop_kind::forward, prop_kind::backward_data)
-            ? std::forward<T>(wei)
-            : std::forward<T>(dst);
+    bool is_fwd = (prop == prop_kind::forward);
+    bool is_bwd_d = (prop == prop_kind::backward_data);
+    return std::forward<T>(is_fwd || is_bwd_d ? wei : dst);
 }
 
 template <typename T>
@@ -69,7 +70,8 @@ class conv_problem_t {
 public:
     conv_problem_t() = default;
 
-    status_t init(const engine_t *engine, const convolution_pd_t *conv_pd);
+    status_t init(
+            const impl::engine_t *engine, const convolution_pd_t *conv_pd);
 
     bool is_stride1() const { return sd == 1 && sh == 1 && sw == 1; }
 

@@ -26,8 +26,8 @@
 #include "common/sdpa_pd.hpp"
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
+#include "gpu/gpu_resource.hpp"
 #include "gpu/intel/gpu_primitive.hpp"
-#include "gpu/intel/gpu_resource.hpp"
 #include "gpu/intel/microkernels/shim.hpp"
 #include "gpu/intel/ocl/ocl_utils.hpp"
 #include "gpu/intel/primitive_conf.hpp"
@@ -45,7 +45,7 @@ struct micro_sdpa_t : public gpu_primitive_t {
 
         DECLARE_COMMON_PD_T("ocl:micro:any", micro_sdpa_t);
 
-        status_t init(engine_t *engine) {
+        status_t init(impl::engine_t *engine) {
             using namespace data_type;
             using smask_t = primitive_attr_t::skip_mask_t;
 
@@ -72,14 +72,13 @@ struct micro_sdpa_t : public gpu_primitive_t {
             return status::success;
         }
 
-        status_t set_default_format(memory_desc_t &md, bool transposed) {
+        status_t set_default_format(memory_desc_t &md, bool allow_transpose) {
             using namespace format_tag;
             memory_desc_wrapper mdw(md);
-            auto exp_trans = transposed ? dnnl_trans : dnnl_notrans;
-            if (mdw.format_any())
+            if (mdw.format_any()) return status::unimplemented;
+            if (!is_md_gemm_compatible_plain_format(&md))
                 return status::unimplemented;
-            else if (!is_md_gemm_compatible_plain_format(&md)
-                    || gemm_desc_t::get_trans(md) != exp_trans)
+            if (gemm_desc_t::get_trans(md) == dnnl_trans && !allow_transpose)
                 return status::unimplemented;
             return status::success;
         }
@@ -98,7 +97,12 @@ struct micro_sdpa_t : public gpu_primitive_t {
         int sg_size() const { return sg_size_; }
 
         // Block size for head_size, which must be hard-coded into the kernel.
-        int d_max() const { return utils::rnd_up(desc()->head_size(), 32); }
+        int d_max() const {
+            int head_size = desc()->head_size();
+            for (int i = 32; i <= 1024; i *= 2)
+                if (head_size <= i) return i;
+            return head_size;
+        }
 
         compute::gpu_arch_t arch() const { return arch_; }
 
@@ -107,10 +111,10 @@ struct micro_sdpa_t : public gpu_primitive_t {
         int sg_size_ = 0;
         compute::gpu_arch_t arch_;
 
-        status_t init_microkernels(engine_t *engine);
+        status_t init_microkernels(impl::engine_t *engine);
     };
 
-    status_t init(engine_t *engine) override;
+    status_t init(impl::engine_t *engine) override;
 
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }

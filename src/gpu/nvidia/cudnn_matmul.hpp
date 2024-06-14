@@ -37,7 +37,7 @@ struct cudnn_matmul_t : public primitive_t {
 
         DECLARE_COMMON_PD_T("cuda:cudnn:any", cudnn_matmul_t);
 
-        status_t init(engine_t *engine) {
+        status_t init(impl::engine_t *engine) {
             using namespace data_type;
             using smask_t = primitive_attr_t::skip_mask_t;
 
@@ -53,15 +53,16 @@ struct cudnn_matmul_t : public primitive_t {
             bool s8_case = utils::everyone_is(s8, src_dt, wei_dt)
                     && utils::one_of(dst_dt, s8, f32);
 
-            auto *sycl_engine
-                    = utils::downcast<impl::sycl::sycl_engine_base_t *>(engine);
+            auto *sycl_engine_impl
+                    = utils::downcast<const xpu::sycl::engine_impl_t *>(
+                            engine->impl());
 
             bool ok = is_dense_format_kind() && blocking_ok()
                     && attr()->has_default_values(
                             smask_t::scales_runtime | smask_t::post_ops)
                     && scales_ok() && attr_post_ops_ok(attr())
-                    && IMPLICATION(
-                            bf16_case, has_bf16_support(sycl_engine->device()))
+                    && IMPLICATION(bf16_case,
+                            has_bf16_support(sycl_engine_impl->device()))
                     && set_default_formats()
                     && (f32_case || f16_case || bf16_case || s8_case)
                     && IMPLICATION(with_bias(),
@@ -133,7 +134,7 @@ struct cudnn_matmul_t : public primitive_t {
         }
     };
 
-    status_t init(engine_t *engine) override {
+    status_t init(impl::engine_t *engine) override {
         matmul_impl_.reset(new cudnn_matmul_impl_t());
         const auto status = matmul_impl_->init((matmul_pd_t *)pd());
         if (status != status::success) return status;

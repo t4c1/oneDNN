@@ -36,7 +36,7 @@ status_t ref_binary_t::pd_t::init_conf() {
     conf_.block_size = 16;
     conf_.wg_size = 32;
 
-    conf_.wk_size = memory_desc_wrapper(src_md(0)).nelems();
+    conf_.wk_size = memory_desc_wrapper(dst_md()).nelems();
 
     conf_.alg_kind = desc()->alg_kind;
     // Limitations:
@@ -47,7 +47,10 @@ status_t ref_binary_t::pd_t::init_conf() {
             = !attr()->scales_.get(DNNL_ARG_SRC_1).has_default_values();
     conf_.is_tensor_op = is_tensor_op();
     for (size_t i = 0; i < xpu::sycl::md_t::max_dims; i++) {
-        conf_.broadcast_dims[i] = broadcast_dims()[i];
+        conf_.broadcast_dims0[i]
+                = conf_.src0_md.dims()[i] == 1 && conf_.src1_md.dims()[i] != 1;
+        conf_.broadcast_dims1[i]
+                = conf_.src0_md.dims()[i] != 1 && conf_.src1_md.dims()[i] == 1;
     }
 
     conf_.post_ops = sycl_post_ops_t(attr());
@@ -62,7 +65,7 @@ status_t ref_binary_t::pd_t::init_conf() {
     return status::success;
 }
 
-status_t ref_binary_t::init(engine_t *engine) {
+status_t ref_binary_t::init(impl::engine_t *engine) {
     const auto kid = ::sycl::get_kernel_id<binary_kernel_vec_t>();
     CHECK(create_kernel(engine, kid, &kernel_));
     return status::success;

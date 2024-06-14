@@ -31,15 +31,15 @@ namespace impl {
 namespace gpu {
 namespace sycl {
 
-struct ref_binary_t : public sycl_gpu_primitive_t {
-    using sycl_gpu_primitive_t::sycl_gpu_primitive_t;
+struct ref_binary_t : public gpu::sycl::primitive_t {
+    using gpu::sycl::primitive_t::primitive_t;
 
     struct pd_t : public gpu_binary_pd_t {
         using gpu_binary_pd_t::gpu_binary_pd_t;
 
         DECLARE_COMMON_PD_T("dpcpp:ref:any", ref_binary_t);
 
-        status_t init(engine_t *engine) {
+        status_t init(impl::engine_t *engine) {
             using namespace data_type;
             using sm = primitive_attr_t::skip_mask_t;
 
@@ -104,20 +104,18 @@ struct ref_binary_t : public sycl_gpu_primitive_t {
             using namespace format_tag;
 
             for (const auto &mdw : {src0, src1, dst}) {
-                if (mdw.matches_one_of_tag(a, ab, abc, abcd, abcde) == undef) {
-                    return false;
-                }
+                if (!mdw.is_plain()) { return false; }
             }
             return true;
         }
     };
 
-    status_t init(engine_t *engine) override;
+    status_t init(impl::engine_t *engine) override;
     status_t execute(const exec_ctx_t &ctx) const override;
 
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
-    intel::compute::kernel_t kernel_;
+    kernel_t kernel_;
 };
 
 } // namespace sycl

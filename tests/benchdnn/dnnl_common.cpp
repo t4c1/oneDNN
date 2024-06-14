@@ -46,6 +46,7 @@
 #include "dnnl_memory.hpp"
 
 #include "utils/cold_cache.hpp"
+#include "utils/dnnl_query.hpp"
 #include "utils/fill.hpp"
 #include "utils/stream_kind.hpp"
 
@@ -224,12 +225,15 @@ int test_persistent_cache_api(
         st = get_cache_blob(cache_blob, prim);
         if (st != OK) return res->state = FAILED, FAIL;
 
-        // The cross-engine reorder is a special primitive that may contain no
-        // kernels therefore the cache blob will always be empty, which is
-        // the correct behavior.
+        // The cross-engine and direct copy reorders are special primitives that
+        // may contain no kernels therefore the cache blob will always be empty,
+        // which is the correct behavior.
         if (cache_blob.empty()) {
             set_primitive_cache_capacity_without_clearing(old_capacity);
-            if (res->impl_name.find("cross_engine") != std::string::npos)
+            if (query_prim_kind(pd) == dnnl_reorder
+                    && (res->impl_name.find("cross_engine") != std::string::npos
+                            || res->impl_name.find("direct_copy")
+                                    != std::string::npos))
                 return OK;
 
             BENCHDNN_PRINT(
@@ -1293,7 +1297,8 @@ int get_memory_footprint(const_dnnl_primitive_desc_t const_pd, res_t *res) {
             const_pd, /* want_input = */ false);
     get_memory_bytes(check_mem_out_size_args); // Get output bytes.
 
-    // Update read bytes with dst bytes in case of sum post-op.
+    // Sum post-ops include dst bytes as an input. Not included in get_memory_bytes
+    // since it would cause check_mem_size to double-count dst bytes.
     auto const_attr_po = query_post_ops(const_pd);
     auto po_len = dnnl_post_ops_len(const_attr_po);
     for (int idx = 0; idx < po_len; ++idx) {
@@ -1301,11 +1306,36 @@ int get_memory_footprint(const_dnnl_primitive_desc_t const_pd, res_t *res) {
         if (kind == dnnl_sum) {
             const auto &dst_md = query_md(const_pd, DNNL_ARG_DST);
             add_md_size(dst_md, check_mem_in_size_args);
-        } else if (kind == dnnl_binary) {
-            int po_arg = DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_SRC_1;
-            const auto &po_md = query_md(const_pd, po_arg);
-            add_md_size(po_md, check_mem_in_size_args);
         }
+    }
+
+    // Forward nearest neighbor down sampling (one or more bigger source
+    // dimensions than in destination) cases by the nature of the operation
+    // read only a part of a source tensor. Here we adjust the `ibytes` variable
+    // so that reported bandwidth numbers reflect the reality, otherwise
+    // final numbers are much higher than they should be.
+    dnnl_primitive_kind_t kind = query_prim_kind(const_pd);
+    dnnl_alg_kind_t alg = query_alg_kind(const_pd);
+    dnnl_prop_kind_t prop = query_prop_kind(const_pd);
+    if (is_fwd_prop_kind(prop) && kind == dnnl_resampling
+            && alg == dnnl_resampling_nearest) {
+        auto src_md = query_md(const_pd, DNNL_ARG_SRC);
+        auto dst_md = query_md(const_pd, DNNL_ARG_DST);
+        auto ndims = query_md_ndims(src_md);
+        auto src_pdims = query_md_padded_dims(src_md);
+        auto dst_pdims = query_md_padded_dims(dst_md);
+        dnnl_dim_t total_elems = 1;
+        dnnl_dim_t read_elems = 1;
+        for (int i = 0; i < ndims; i++) {
+            if (dst_pdims[i] < src_pdims[i]) {
+                total_elems *= src_pdims[i];
+                read_elems *= dst_pdims[i];
+            }
+        }
+        const auto src_size = dnnl_memory_desc_get_size(src_md);
+        const auto fixed_src_size = src_size / static_cast<size_t>(total_elems)
+                * static_cast<size_t>(read_elems);
+        check_mem_in_size_args.total_size_device += fixed_src_size - src_size;
     }
 
     res->ibytes = check_mem_in_size_args.total_size_device;
@@ -1519,19 +1549,20 @@ int update_ref_mem_map_from_prim(dnnl_primitive_t prim_ref,
     // have dedicated query mechanism for those. Process potential outcomes:
     while (query_md_ndims(ref_md) == 0) {
         bool is_scales_arg = (exec_arg & DNNL_ARG_ATTR_SCALES);
-        // Ref memory for scales is f32, the library expects it same data type.
-        // Skip replacement.
+        // Scales received data type support in the library. The reference
+        // primitive expects them in the same data type.
         if (is_scales_arg) {
-            skip_replace = true;
+            prim_ref_mem = dnn_mem_t(
+                    library_mem.md_, library_mem.dt(), tag::abx, ref_engine);
             break;
         }
 
         bool is_zero_point_arg = (exec_arg & DNNL_ARG_ATTR_ZERO_POINTS);
-        // Ref memory for zps is f32, but the library expects it in s32. Update
-        // the memory and proceed to replacement.
+        // Zero-points received data type support in the library. The reference
+        // primitive expects them in the same data type.
         if (is_zero_point_arg) {
             prim_ref_mem = dnn_mem_t(
-                    library_mem.md_, dnnl_s32, tag::abx, ref_engine);
+                    library_mem.md_, library_mem.dt(), tag::abx, ref_engine);
             break;
         }
 

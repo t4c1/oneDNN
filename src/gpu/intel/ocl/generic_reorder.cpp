@@ -678,8 +678,8 @@ bool split_into_blocks_and_packets(size_t vect, size_t optimal_burst_bytes,
     // 6. At this point contents of src block and dst blocks are not sorted.
     // Sort each of them according to tensor format tag to make longest
     // possible continuous memory accesses.
-    src_block = fix_order_to(src_block, sremainder);
-    dst_block = fix_order_to(dst_block, dremainder);
+    src_block = fix_order_to(src_block, std::move(sremainder));
+    dst_block = fix_order_to(dst_block, std::move(dremainder));
     fix_steps(src_block, src_packet);
     fix_steps(dst_block, dst_packet);
     return true;
@@ -770,7 +770,7 @@ bool fill_conf_vld(const memory_desc_wrapper &src,
     return true;
 }
 
-status_t generic_reorder_t::pd_t::init_conf(engine_t *engine) {
+status_t generic_reorder_t::pd_t::init_conf(impl::engine_t *engine) {
     using namespace format_tag;
 
     size_t memlimit_bytes;

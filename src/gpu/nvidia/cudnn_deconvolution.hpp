@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2023 Intel Corporation
+* Copyright 2020-2024 Intel Corporation
 * Copyright 2020 Codeplay Software Limited
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -125,11 +125,12 @@ struct cudnn_deconvolution_fwd_t : public primitive_t {
 
         DECLARE_COMMON_PD_T("cuda:cudnn:any", cudnn_deconvolution_fwd_t);
 
-        status_t init_convolution(engine_t *engine) {
+        status_t init_convolution(impl::engine_t *engine) {
             using namespace format_tag;
             using namespace data_type;
-            auto *sycl_engine
-                    = utils::downcast<impl::sycl::sycl_engine_base_t *>(engine);
+
+            auto sycl_dev
+                    = utils::downcast<nvidia::engine_t *>(engine)->device();
             convolution_desc_t cd;
             CHECK(conv_descr_create(desc(), &cd));
             primitive_attr_t conv_attr = *attr();
@@ -146,7 +147,7 @@ struct cudnn_deconvolution_fwd_t : public primitive_t {
                                 desc()->dst_desc.data_type, f32, f16, bf16)
                         && IMPLICATION(
                                 desc()->dst_desc.data_type == data_type::bf16,
-                                has_bf16_support(sycl_engine->device()))
+                                has_bf16_support(sycl_dev))
                         && IMPLICATION(desc()->src_desc.data_type == f16,
                                 memory_desc_matches_one_of_tag(
                                         *conv_pd_->diff_src_md(),
@@ -164,9 +165,10 @@ struct cudnn_deconvolution_fwd_t : public primitive_t {
             return status::unimplemented;
         }
 
-        status_t init(engine_t *engine) {
-            auto *sycl_engine
-                    = utils::downcast<impl::sycl::sycl_engine_base_t *>(engine);
+        status_t init(impl::engine_t *engine) {
+            auto *sycl_engine_impl
+                    = utils::downcast<const xpu::sycl::engine_impl_t *>(
+                            engine->impl());
             using namespace format_tag;
             bool ok = true && is_fwd();
             ok = ok
@@ -191,7 +193,7 @@ struct cudnn_deconvolution_fwd_t : public primitive_t {
                                            desc()->src_desc.data_type,
                                            desc()->weights_desc.data_type,
                                            desc()->dst_desc.data_type),
-                            has_bf16_support(sycl_engine->device()));
+                            has_bf16_support(sycl_engine_impl->device()));
 
             if (ok) {
                 CHECK(init_convolution(engine));
@@ -230,7 +232,7 @@ struct cudnn_deconvolution_fwd_t : public primitive_t {
 
     ~cudnn_deconvolution_fwd_t() {}
 
-    virtual status_t init(engine_t *engine) {
+    virtual status_t init(impl::engine_t *engine) {
         return pd()->conv_pd_->create_primitive(conv_p_, engine);
     }
 
@@ -254,7 +256,7 @@ struct cudnn_deconvolution_fwd_t : public primitive_t {
 
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
-    std::shared_ptr<primitive_t> conv_p_;
+    std::shared_ptr<impl::primitive_t> conv_p_;
 };
 
 struct cudnn_deconvolution_bwd_data_t : public primitive_t {
@@ -273,7 +275,7 @@ struct cudnn_deconvolution_bwd_data_t : public primitive_t {
 
         DECLARE_COMMON_PD_T("cuda:cudnn:any", cudnn_deconvolution_bwd_data_t);
 
-        status_t init_convolution(engine_t *engine) {
+        status_t init_convolution(impl::engine_t *engine) {
             convolution_desc_t cd;
             CHECK(conv_descr_create(desc(), &cd));
             primitive_attr_t conv_attr = *attr();
@@ -286,9 +288,10 @@ struct cudnn_deconvolution_bwd_data_t : public primitive_t {
             return status::unimplemented;
         }
 
-        status_t init(engine_t *engine) {
-            auto *sycl_engine
-                    = utils::downcast<impl::sycl::sycl_engine_base_t *>(engine);
+        status_t init(impl::engine_t *engine) {
+            auto *sycl_engine_impl
+                    = utils::downcast<const xpu::sycl::engine_impl_t *>(
+                            engine->impl());
             bool ok = true && desc()->prop_kind == prop_kind::backward_data
                     && (utils::everyone_is(data_type::f32,
                                 desc()->diff_src_desc.data_type,
@@ -304,7 +307,7 @@ struct cudnn_deconvolution_bwd_data_t : public primitive_t {
                                            desc()->weights_desc.data_type,
                                            desc()->diff_dst_desc.data_type,
                                            desc()->diff_src_desc.data_type),
-                            has_bf16_support(sycl_engine->device()))
+                            has_bf16_support(sycl_engine_impl->device()))
                     && utils::one_of(desc()->diff_src_desc.data_type,
                             data_type::f16, data_type::f32, data_type::bf16)
                     && desc()->alg_kind == alg_kind::deconvolution_direct
@@ -339,7 +342,7 @@ struct cudnn_deconvolution_bwd_data_t : public primitive_t {
 
     ~cudnn_deconvolution_bwd_data_t() {}
 
-    virtual status_t init(engine_t *engine) {
+    virtual status_t init(impl::engine_t *engine) {
         return pd()->conv_pd_->create_primitive(conv_p_, engine);
     }
 
@@ -363,7 +366,7 @@ struct cudnn_deconvolution_bwd_data_t : public primitive_t {
 
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
-    std::shared_ptr<primitive_t> conv_p_;
+    std::shared_ptr<impl::primitive_t> conv_p_;
 };
 
 struct cudnn_deconvolution_bwd_weights_t : public primitive_t {
@@ -383,7 +386,7 @@ struct cudnn_deconvolution_bwd_weights_t : public primitive_t {
         DECLARE_COMMON_PD_T(
                 "cuda:cudnn:any", cudnn_deconvolution_bwd_weights_t);
 
-        status_t init_convolution(engine_t *engine) {
+        status_t init_convolution(impl::engine_t *engine) {
             convolution_desc_t cd;
             CHECK(conv_descr_create(desc(), &cd));
             primitive_attr_t conv_attr = *attr();
@@ -397,9 +400,10 @@ struct cudnn_deconvolution_bwd_weights_t : public primitive_t {
             return status::unimplemented;
         }
 
-        status_t init(engine_t *engine) {
-            auto *sycl_engine
-                    = utils::downcast<impl::sycl::sycl_engine_base_t *>(engine);
+        status_t init(impl::engine_t *engine) {
+            auto *sycl_engine_impl
+                    = utils::downcast<const xpu::sycl::engine_impl_t *>(
+                            engine->impl());
             using namespace format_tag;
             bool ok = true && desc()->prop_kind == prop_kind::backward_weights
                     && (utils::everyone_is(data_type::f32,
@@ -416,7 +420,7 @@ struct cudnn_deconvolution_bwd_weights_t : public primitive_t {
                                            desc()->diff_dst_desc.data_type,
                                            desc()->src_desc.data_type,
                                            desc()->diff_weights_desc.data_type),
-                            has_bf16_support(sycl_engine->device())
+                            has_bf16_support(sycl_engine_impl->device())
                                     && !with_bias())
                     && utils::one_of(
                             desc()->alg_kind, alg_kind::deconvolution_direct)
@@ -455,7 +459,7 @@ struct cudnn_deconvolution_bwd_weights_t : public primitive_t {
 
     ~cudnn_deconvolution_bwd_weights_t() {}
 
-    virtual status_t init(engine_t *engine) {
+    virtual status_t init(impl::engine_t *engine) {
         if (pd()->with_bias()) {
             if (pd()->ndims() > CUDNN_DIM_MAX) return status::invalid_arguments;
 
@@ -490,7 +494,7 @@ struct cudnn_deconvolution_bwd_weights_t : public primitive_t {
 
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
-    std::shared_ptr<primitive_t> conv_p_;
+    std::shared_ptr<impl::primitive_t> conv_p_;
     std::shared_ptr<cudnn_deconvolution_bwd_bias_impl_t> impl_;
 };
 
