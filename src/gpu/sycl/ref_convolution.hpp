@@ -50,12 +50,11 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
             const bool ok = is_fwd() 
                     && check_work_amount(weights_d)
                     && set_default_formats()
-                    //&& set_default_params() == status::success
                     && attr_.set_default_formats(dst_md()) == status::success
                     && check_data_types(data_d, weights_d, dst_d)
                     && check_formats(data_d, weights_d, dst_d)
                     && attr()->has_default_values(
-                            sm::scales_runtime | sm::zero_points_runtime | sm::post_ops)
+                            sm::scales_runtime | sm::zero_points_runtime | sm::post_ops | sm::sum_dt)
                     && IMPLICATION(!attr()->scales_.has_default_values(),
                             check_scales_mask())
                     && post_ops_ok();
@@ -94,10 +93,9 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
                     return false;
                 }
             }
-            // Dw conv post-ops are not supported.
             return attr()->post_ops_.len() <= sycl_post_ops_t::max_post_ops
                     && attr()->post_ops_.has_default_values(
-                            {primitive_kind::eltwise, primitive_kind::convolution,
+                            {primitive_kind::eltwise, 
                                     primitive_kind::prelu,
                                     primitive_kind::sum});
         }
@@ -115,8 +113,7 @@ struct ref_convolution_fwd_t : public sycl_gpu_primitive_t {
                 if (!utils::one_of(t, /*f64,*/ f32, bf16, f16, s32, s8, u8)) return false;
             }
 
-            return true/*IMPLICATION(utils::one_of(bf16, src0_dt, src1_dt, dst_dt),
-                    src0_dt == dst_dt && src1_dt == dst_dt)*/;
+            return true;
         }
 
         static bool check_formats(const memory_desc_wrapper &src0,

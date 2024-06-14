@@ -67,13 +67,6 @@ status_t ref_convolution_fwd_t::pd_t::init_conf() {
     conf_.dilation[0] = static_cast<int>(desc()->dilates[0]);
     conf_.dilation[1] = static_cast<int>(desc()->dilates[1]);
     conf_.dilation[2] = static_cast<int>(desc()->dilates[2]);
-    /*std::cout << "pad "
-              << padFront() << " "
-              << padBack() << " "
-              << padT() << " "
-              << padB() << " "
-              << padL() << " "
-              << padR() << "\n";*/
     return status::success;
 }
 
@@ -110,15 +103,21 @@ status_t ref_convolution_fwd_t::execute(const exec_ctx_t &ctx) const {
                 = CTX_IN_SYCL_KERNEL_MEMORY(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC_0);
         auto dst_zeropoints
                 = CTX_IN_SYCL_KERNEL_MEMORY(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST);
-        //std::cout << "type " << ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS)
-          //                .data_type() << " " << data_type::s32 << std::endl;
 
-        //::sycl::stream s(1024*10,1024*10,cgh);
+        auto zeropoints_data_dt = (pd()->conf_.use_data_zeropoints)
+                ? ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC_0)
+                          .data_type()
+                : data_type_t::dnnl_f32;
+        auto zeropoints_dst_dt = (pd()->conf_.use_dst_zeropoints)
+                ? ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST)
+                          .data_type()
+                : data_type_t::dnnl_f32;
 
         convolution_kernel_vec_t convolution_kernel(pd()->conf_, data_mem_arg,
                 weights_mem_arg, bias_mem_arg, dst_mem_arg, data_scale_mem_arg,
                 weights_scale_mem_arg, dst_scale_mem_arg, 
-                data_zeropoints, dst_zeropoints, scales_data_dt, scales_weights_dt);
+                data_zeropoints, dst_zeropoints, scales_data_dt, scales_weights_dt, 
+                zeropoints_data_dt, zeropoints_dst_dt);
 
         const int block_size = pd()->conf_.block_size;
         const int wg_size = pd()->conf_.wg_size;
