@@ -32,7 +32,7 @@ namespace nvidia {
 
 struct cudnn_matmul_impl_t : cudnn_matmul_base_impl_t {
 
-    status_t init(matmul_pd_t *pd, impl::engine_t *engine) override {
+    status_t init(matmul_pd_t *pd) {
 
         CHECK(get_cublas_data_type(pd->src_md()->data_type, src_type_));
 
@@ -85,7 +85,7 @@ struct cudnn_matmul_impl_t : cudnn_matmul_base_impl_t {
         if (!has_runtime_params_) {
             // Initialise all gemm parameters if there are no runtime parameters
             init_parameters(src_d, weights_d, dst_d,
-                    memory_desc_wrapper(pd->weights_md(1)), engine);
+                    memory_desc_wrapper(pd->weights_md(1)));
             init_scratchpad(pd);
         }
 
@@ -146,8 +146,7 @@ struct cudnn_matmul_impl_t : cudnn_matmul_base_impl_t {
 
     status_t init_parameters(const memory_desc_wrapper src_d,
             const memory_desc_wrapper weights_d,
-            const memory_desc_wrapper dst_d, const memory_desc_wrapper bias_d,
-            impl::engine_t *engine) override {
+            const memory_desc_wrapper dst_d, const memory_desc_wrapper bias_d) {
         // Matmul supports runtime paramters for dimensions and scales.
         // We need to initialize them in the execute function.
         CHECK(init_gemm_parameters(src_d, weights_d, dst_d));
@@ -205,10 +204,8 @@ struct cudnn_matmul_impl_t : cudnn_matmul_base_impl_t {
     }
 
     void execute(cublasHandle_t cublas_handle, cudnnHandle_t cudnn_handle,
-            void *a, void *b, void *c, void *bias, void *algo_scratch,
-            void *reorder_scratch, void *block_a_scratch, void *block_b_scratch,
-            void *block_c_scratch, void *src_scale, void *wei_scale,
-            void *dst_scale) override {
+            void *a, void *b, void *c, void *bias, void *reorder_scratch,
+            void *src_scale, void *wei_scale, void *dst_scale) {
         float gemm_beta = 0;
         if (!bias_dt_mismatch_ && !reorder_required_) {
             // Case where no reorder is required, scratchpad points to dst (c)

@@ -30,24 +30,11 @@ namespace gpu {
 namespace nvidia {
 
 struct cudnn_matmul_base_impl_t {
-    virtual status_t init(matmul_pd_t *pd, impl::engine_t *engine = nullptr)
-            = 0;
     virtual status_t init_gemm_parameters(const memory_desc_wrapper src_d,
             const memory_desc_wrapper weights_d,
             const memory_desc_wrapper dst_d)
             = 0;
-    virtual status_t init_parameters(const memory_desc_wrapper src_d,
-            const memory_desc_wrapper weights_d,
-            const memory_desc_wrapper dst_d, const memory_desc_wrapper bias_d,
-            impl::engine_t *engine)
-            = 0;
     virtual void init_scratchpad(matmul_pd_t *pd) = 0;
-    virtual void execute(cublasHandle_t cublas_handle,
-            cudnnHandle_t cudnn_handle, void *a, void *b, void *c, void *bias,
-            void *algo_scratch, void *reorder_scratch, void *block_a_scratch,
-            void *block_b_scratch, void *block_c_scratch, void *src_scale,
-            void *wei_scale, void *dst_scale)
-            = 0;
     virtual void cleanup() = 0;
 
     bool isbatched() { return isbatched_; }
@@ -178,9 +165,7 @@ struct cudnn_matmul_base_impl_t {
 
     virtual ~cudnn_matmul_base_impl_t() = default;
 
-    size_t algo_scratch_size() { return algo_scratch_size_; }
     size_t bias_scratch_size() { return reorder_scratch_size_; }
-    virtual bool is_imma_case() { return false; }
 
 protected:
     int lda_, ldb_, ldc_;

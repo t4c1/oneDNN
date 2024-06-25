@@ -43,7 +43,7 @@ T ceildiv(T n, T d) {
 
 struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
 
-    status_t init(matmul_pd_t *pd, impl::engine_t *engine) override {
+    status_t init(matmul_pd_t *pd, impl::engine_t *engine) {
 
         CHECK(get_cublas_data_type(pd->src_md()->data_type, src_type_));
         CHECK(get_cublas_data_type(pd->weights_md()->data_type, weights_type_));
@@ -59,8 +59,6 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         has_runtime_params_ = src_d.has_runtime_dims_or_strides()
                 || dst_d.has_runtime_dims_or_strides()
                 || weights_d.has_runtime_dims_or_strides();
-        // Runtime dimensions are not currently supported
-        if (has_runtime_params_) { return status::unimplemented; }
 
         batch_count_ = isbatched_ ? dst_d.dims()[0] : 1;
         M_ = static_cast<uint64_t>(dst_d.dims()[isbatched_ + 1]);
@@ -75,17 +73,21 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
 
         // Check if bias can be used in the epilogue
         if (with_bias_) {
-            bias_dt_mismatch_
-                    = (pd->weights_md(1)->data_type != pd->dst_md()->data_type);
-            if (bias_dt_mismatch_ || dst_row_major) {
-                with_separate_bias_ = true;
-            }
-            if (!with_separate_bias_ && !dst_row_major) {
-                // bias epilogue not supported for dst dim = 1
-                if ((bias_d.dims()[1 + isbatched_] != M_
-                            || bias_d.dims()[0 + isbatched_] != 1)
-                        || M_ == 1 || N_ == 1) {
+            if (has_runtime_params_) {
+                return status::unimplemented;
+            } else {
+                bias_dt_mismatch_ = (pd->weights_md(1)->data_type
+                        != pd->dst_md()->data_type);
+                if (bias_dt_mismatch_ || dst_row_major) {
                     with_separate_bias_ = true;
+                }
+                if (!with_separate_bias_ && !dst_row_major) {
+                    // bias epilogue not supported for dst dim = 1
+                    if ((bias_d.dims()[1 + isbatched_] != M_
+                                || bias_d.dims()[0 + isbatched_] != 1)
+                            || M_ == 1 || N_ == 1 || has_runtime_params_) {
+                        with_separate_bias_ = true;
+                    }
                 }
             }
         }
@@ -148,8 +150,10 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         beta_ = std::malloc(alpha_beta_size_bytes_);
 
         // Initialise all gemm parameters
-        init_parameters(src_d, weights_d, dst_d, bias_d, engine);
-        init_scratchpad(pd);
+        if (!has_runtime_params_) {
+            init_parameters(src_d, weights_d, dst_d, bias_d, engine);
+            init_scratchpad(pd);
+        }
 
         return status::success;
     }
@@ -218,7 +222,7 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
     status_t init_parameters(const memory_desc_wrapper src_d,
             const memory_desc_wrapper weights_d,
             const memory_desc_wrapper dst_d, const memory_desc_wrapper bias_d,
-            impl::engine_t *engine) override {
+            impl::engine_t *engine) {
 
         auto &sycl_engine = *utils::downcast<nvidia::engine_t *>(engine);
         impl::stream_t *service_stream;
@@ -228,6 +232,10 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
 
         auto cublas_handle = cuda_stream->get_cublas_handle();
         auto lt_handle = (cublasLtHandle_t)cublas_handle;
+
+        M_ = static_cast<uint64_t>(dst_d.dims()[isbatched_ + 1]);
+        N_ = static_cast<uint64_t>(dst_d.dims()[isbatched_ + 0]);
+        K_ = static_cast<uint64_t>(src_d.dims()[isbatched_ + 1]);
 
         CHECK(init_imma_sizes(src_d, weights_d, dst_d));
 
@@ -362,7 +370,7 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
             void *a, void *b, void *c, void *bias, void *algo_scratch,
             void *reorder_scratch, void *block_a_scratch, void *block_b_scratch,
             void *block_c_scratch, void *src_scale, void *wei_scale,
-            void *dst_scale) override {
+            void *dst_scale) {
 
         cudaStream_t streamId;
         auto lt_handle = (cublasLtHandle_t)(cublas_handle);
@@ -515,7 +523,12 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         }
     }
 
-    bool is_imma_case() override { return imma_case_; }
+    bool is_imma_case() { return imma_case_; }
+
+    size_t algo_scratch_size() { return algo_scratch_size_; }
+    size_t block_a_scratch_size() { return source_size_; }
+    size_t block_b_scratch_size() { return weight_size_; }
+    size_t block_c_scratch_size() { return dest_size_; }
 
 private:
     cublasLtMatmulDesc_t operation_desc_;

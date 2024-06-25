@@ -18,8 +18,6 @@
 #ifndef GPU_NVIDIA_CUDNN_MATMUL_HPP
 #define GPU_NVIDIA_CUDNN_MATMUL_HPP
 
-#include "gpu/gpu_primitive.hpp"
-
 #include "gpu/gpu_matmul_pd.hpp"
 
 #include "gpu/nvidia/cudnn_matmul_executor.hpp"
@@ -32,15 +30,15 @@ namespace impl {
 namespace gpu {
 namespace nvidia {
 
-struct cudnn_matmul_t : public gpu::primitive_t {
-    using gpu::primitive_t::primitive_t;
+struct cudnn_matmul_t : cudnn_matmul_base_t {
+    using cudnn_matmul_base_t::cudnn_matmul_base_t;
 
-    struct pd_t : public gpu_matmul_pd_t {
-        using gpu_matmul_pd_t::gpu_matmul_pd_t;
+    struct pd_t : public pd_base_t {
+        using pd_base_t::pd_base_t;
 
         DECLARE_COMMON_PD_T("cuda:cudnn:any", cudnn_matmul_t);
 
-        status_t init(impl::engine_t *engine) {
+        status_t init(impl::engine_t *engine) override {
             using namespace data_type;
             using smask_t = primitive_attr_t::skip_mask_t;
 
@@ -53,20 +51,14 @@ struct cudnn_matmul_t : public gpu::primitive_t {
             bool f32_case = utils::everyone_is(f32, src_dt, wei_dt, dst_dt);
             bool f16_case = utils::everyone_is(f16, src_dt, wei_dt, dst_dt);
             bool bf16_case = utils::everyone_is(bf16, src_dt, wei_dt, dst_dt);
-
-#ifdef DNNL_NO_IMMA_INT8
             bool s8_case = utils::everyone_is(s8, src_dt, wei_dt)
-                    && utils::one_of(dst_dt, f32, s32);
-#else
-            bool s8_case = utils::everyone_is(s8, src_dt, wei_dt)
-                    && utils::one_of(dst_dt, s8, f32, s32);
-#endif
+                    && utils::one_of(dst_dt, s8, f32);
 
             auto *sycl_engine_impl
                     = utils::downcast<const xpu::sycl::engine_impl_t *>(
                             engine->impl());
 
-            bool ok = is_dense_format_kind() && (blocking_ok() || imma_blocks())
+            bool ok = is_dense_format_kind() && blocking_ok()
                     && attr()->has_default_values(
                             smask_t::scales_runtime | smask_t::post_ops)
                     && scales_ok() && attr_post_ops_ok(attr())
@@ -74,7 +66,6 @@ struct cudnn_matmul_t : public gpu::primitive_t {
                             has_bf16_support(sycl_engine_impl->device()))
                     && set_default_formats()
                     && (f32_case || f16_case || bf16_case || s8_case)
-                    && IMPLICATION(s8_case && imma_blocks(), !with_bias())
                     && IMPLICATION(with_bias(),
                             (IMPLICATION(f32_case, utils::one_of(bia_dt, f32))
                                     && IMPLICATION(f16_case,
@@ -83,131 +74,43 @@ struct cudnn_matmul_t : public gpu::primitive_t {
                                             utils::one_of(bia_dt, bf16, f32))
                                     && IMPLICATION(s8_case,
                                             utils::one_of(bia_dt, s8, f32))))
-                    && !(with_bias() && s8_case)
-                    && IMPLICATION(has_runtime_dims_or_strides(), !s8_case);
-
-            memory_desc_wrapper weight_wrap(weights_md());
-            memory_desc_wrapper dst_wrap(dst_md());
-
-            ok = ok
-                    && IMPLICATION(
-                            is_md_col32(weight_wrap) || is_md_col32(dst_wrap),
-                            s8_case);
-
+                    && !(with_bias() && s8_case);
             if (!ok) return status::unimplemented;
 
             if (src_md()->ndims > 3) return status::unimplemented;
 
             return status::success;
-        }
-
-        // Use scratchpad memory and reorder from it in two scenarios:
-        // * Bias dt is different from dst dt.
-        // * Dst dt is not f32. cuBLAS only supports s8s8f32.
-        bool reorder_required() const {
-            return dst_md()->data_type != data_type::f32
-                    || (with_bias()
-                            && (weights_md(1)->data_type
-                                    != dst_md()->data_type));
+            
         }
 
         size_t scratchpad_size(const memory_desc_t *dst_md) const {
             const auto dst_nelems = memory_desc_wrapper(dst_md).nelems(true);
             return dst_nelems * sizeof(float);
         }
-
-    private:
-        bool scales_ok() const {
-            const auto &scales = attr()->scales_;
-            const auto &supported_args
-                    = {DNNL_ARG_SRC, DNNL_ARG_WEIGHTS, DNNL_ARG_DST};
-            if (!scales.has_default_values(supported_args)) return false;
-            // cuDNN does not support scaling per dimension.
-            for (auto arg : supported_args)
-                if (scales.get(arg).mask_ != 0) return false;
-            return true;
-        }
-
-        bool blocking_ok() const {
-            std::vector<const memory_desc_t *> mds
-                    = {src_md(), dst_md(), weights_md(0)};
-            if (with_bias()) mds.push_back(weights_md(1));
-            for (const memory_desc_t *md : mds) {
-                memory_desc_wrapper mdw(md);
-                if (mdw.is_blocking_desc()) {
-                    if (mdw.blocking_desc().inner_nblks != 0) { return false; }
-                }
-            }
-            return true;
-        }
-
-        bool imma_blocks() {
-            // weights should be blocked in Ab32a, ab or ba
-            bool weights_supported = false;
-            memory_desc_wrapper weight_wrap(weights_md());
-            if (is_md_col32(weight_wrap) || weight_wrap.is_plain()) {
-                weights_supported = true;
-            }
-            // src not blocked
-            bool src_supported = false;
-            memory_desc_wrapper src_wrap(src_md());
-            if (src_wrap.is_plain()) { src_supported = true; }
-            // dst blocked in Ab32a, ab or ba
-            bool dst_supported = false;
-            memory_desc_wrapper dst_wrap(dst_md());
-            if (is_md_col32(dst_wrap) || dst_wrap.is_plain()) {
-                dst_supported = true;
-            }
-            return (weights_supported && src_supported && dst_supported);
-        }
     };
 
     status_t init(impl::engine_t *engine) override {
-        // LT matmul
-        matmul_impl_.reset(new cudnn_matmul_lt_impl_t());
-        auto status = matmul_impl_->init((matmul_pd_t *)pd(), engine);
-        bool with_bias = matmul_impl_->with_bias();
-        bool has_runtime_args = matmul_impl_->has_runtime_params();
-        bool with_scratchpad = pd()->reorder_required();
-        auto algo_scratch_size = matmul_impl_->algo_scratch_size();
-        bool bias_dt_mismatch = matmul_impl_->bias_dt_mismatch();
-        bool imma_case = matmul_impl_->is_imma_case();
-        if (status == status::success) {
-            if (has_runtime_args) {
-                executor_.reset(new cudnn_matmul_lt_runtime_args_exec_t);
-            } else if (!has_runtime_args) {
-                executor_.reset(new cudnn_matmul_lt_exec_t);
-            }
-        } else if (status != status::success && imma_case) {
-            // s8:s8:s8 & s8:s8:s32 is not supported with regular cublas
-            return status::unimplemented;
-        } else {
-            // BLAS matmul
-            matmul_impl_.reset(new cudnn_matmul_impl_t());
-            status = matmul_impl_->init((matmul_pd_t *)pd());
-            if (status != status::success) return status;
+        matmul_impl_.reset(new cudnn_matmul_impl_t());
+        auto status = matmul_impl_->init((matmul_pd_t *)pd());
+        if (status != status::success) return status;
 
-            with_bias = matmul_impl_->with_bias();
-            has_runtime_args = matmul_impl_->has_runtime_params();
-            with_scratchpad = pd()->reorder_required();
-            if (has_runtime_args) {
-                executor_.reset(new cudnn_matmul_runtime_args_exec_t);
-            } else {
-                executor_.reset(new cudnn_matmul_exec_t);
-            }
+        bool has_runtime_args = matmul_impl_->has_runtime_params();
+
+        if (has_runtime_args) {
+            executor_.reset(new cudnn_matmul_runtime_args_exec_t);
+        } else {
+            executor_.reset(new cudnn_matmul_exec_t);
         }
         return status;
     }
 
     status_t execute(const exec_ctx_t &ctx) const override;
 
-    std::shared_ptr<cudnn_matmul_base_impl_t> matmul_impl_;
-    std::shared_ptr<cudnn_matmul_exec_base_t> executor_;
+    std::shared_ptr<cudnn_matmul_impl_t> matmul_impl_;
+    std::shared_ptr<cudnn_matmul_base_exec_t> executor_;
 
 private:
-    const pd_t *pd() const {
-        return (const pd_t *)primitive_t::pd().get();
-    }
+    const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 };
 
 } // namespace nvidia
