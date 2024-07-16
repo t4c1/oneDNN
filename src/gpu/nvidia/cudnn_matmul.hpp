@@ -80,13 +80,13 @@ struct cudnn_matmul_t : cudnn_matmul_base_t {
             if (src_md()->ndims > 3) return status::unimplemented;
 
             return status::success;
-            
         }
 
         size_t scratchpad_size(const memory_desc_t *dst_md) const {
             const auto dst_nelems = memory_desc_wrapper(dst_md).nelems(true);
             return dst_nelems * sizeof(float);
         }
+
     };
 
     status_t init(impl::engine_t *engine) override {

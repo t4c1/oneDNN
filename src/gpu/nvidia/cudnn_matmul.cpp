@@ -48,7 +48,6 @@ status_t cudnn_matmul_t::execute(const exec_ctx_t &ctx) const {
     bool has_runtime_args = matmul_impl_->has_runtime_params();
     if (has_runtime_args) {
         // Initialise all runtime parameters
-        auto engine = ctx.stream()->engine();
         status = matmul_impl_->init_parameters(src_d, weights_d, dst_d, bias_d);
         if (status != status::success) return status;
 
@@ -58,8 +57,8 @@ status_t cudnn_matmul_t::execute(const exec_ctx_t &ctx) const {
     nvidia::stream_t *cuda_stream
             = utils::downcast<nvidia::stream_t *>(ctx.stream());
 
-    status = executor_->execute(ctx, ctx.stream()->engine(), matmul_impl_,
-             bias_scratchpad_size);
+    status = executor_->execute(
+            ctx, ctx.stream()->engine(), matmul_impl_, bias_scratchpad_size);
 
     if (has_runtime_args) {
         auto &evts = cuda_stream->sycl_ctx().get_sycl_deps().events;
@@ -108,6 +107,19 @@ status_t cudnn_matmul_lt_t::execute(const exec_ctx_t &ctx) const {
     status = executor_->execute(ctx, ctx.stream()->engine(), matmul_impl_,
             algo_scratchpad_size, bias_scratchpad_size, block_a_scratchpad_size,
             block_b_scratchpad_size, block_c_scratchpad_size);
+
+    if (matmul_impl_->with_bias() && status == dnnl_success) {
+        // bias sycl binary
+        exec_args_t binary_args;
+        binary_args[DNNL_ARG_SRC_0]
+                = memory_arg_t {ctx.args().at(DNNL_ARG_DST).mem, true};
+        binary_args[DNNL_ARG_SRC_1] = ctx.args().at(DNNL_ARG_BIAS);
+        binary_args[DNNL_ARG_DST] = ctx.args().at(DNNL_ARG_DST);
+
+        exec_ctx_t binary_ctx(ctx, std::move(binary_args));
+
+        status = binary_->execute(binary_ctx);
+    }
 
     if (has_runtime_args) {
         auto &evts = cuda_stream->sycl_ctx().get_sycl_deps().events;

@@ -71,6 +71,9 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
 
         bool dst_row_major = !is_md_col_major(dst_d);
 
+        // Initialise flags and variables for the imma case
+        handle_imma_case(src_d, weights_d, dst_d);
+
         // Check if bias can be used in the epilogue
         if (with_bias_) {
             if (has_runtime_params_) {
@@ -78,20 +81,28 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
             } else {
                 bias_dt_mismatch_ = (pd->weights_md(1)->data_type
                         != pd->dst_md()->data_type);
-                if (bias_dt_mismatch_ || dst_row_major) {
+                if (imma_case_) {
                     with_separate_bias_ = true;
-                }
-                if (!with_separate_bias_ && !dst_row_major) {
-                    // bias epilogue not supported for dst dim = 1
-                    if ((bias_d.dims()[1 + isbatched_] != M_
-                                || bias_d.dims()[0 + isbatched_] != 1)
-                            || M_ == 1 || N_ == 1 || has_runtime_params_) {
+                    reorder_required_ = false;
+                } else {
+
+                    if (bias_dt_mismatch_ || dst_row_major) {
                         with_separate_bias_ = true;
+                        reorder_required_ = false;
+                    }
+                    if (!with_separate_bias_ && !dst_row_major) {
+                        // bias epilogue not supported for dst dim = 1
+                        if ((bias_d.dims()[1 + isbatched_] != M_
+                                    || bias_d.dims()[0 + isbatched_] != 1)
+                                || M_ == 1 || N_ == 1 || has_runtime_params_) {
+                            with_separate_bias_ = true;
+                            reorder_required_ = false;
+                        }
                     }
                 }
             }
         }
-        bool with_bias_epilogue = with_bias_ && !with_separate_bias_;
+        with_bias_epilogue_ = with_bias_ && !with_separate_bias_;
 
         // Check if activation can be used in epilogue
         if (with_eltwise(0, pd) || with_eltwise(1, pd)) {
@@ -100,24 +111,27 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
                 with_separate_eltwise_ = true;
             }
         }
-        bool with_relu_epilogue = with_relu_ && !with_separate_eltwise_;
+        with_relu_epilogue_ = with_relu_ && !with_separate_eltwise_;
 
         // Seperate bias or activation is not supported
-        if (with_separate_bias_ || with_separate_eltwise_) {
+        if ((with_separate_bias_ && !imma_case_) || with_separate_eltwise_) {
             return status::unimplemented;
         }
 
-        // Initialise flags and variables for the imma case
-        handle_imma_case(src_d, weights_d, dst_d);
-
         // CublasLt is only used for the IMMA case and when the bias and relu are used in the epilogue
-        if (!imma_case_ && !with_bias_epilogue && !with_relu_epilogue) {
+        if (!imma_case_ && !with_relu_epilogue_ && !with_bias_epilogue_) {
             return status::unimplemented;
         }
 
         // Imma case only supports default epilogue
-        if (imma_case_ && (with_relu_epilogue || with_bias_epilogue)) {
+        if (imma_case_ && with_relu_epilogue_) {
             return status::unimplemented;
+        }
+
+        // we use separate bias to support imma case
+        if (imma_case_ && with_bias_epilogue_) {
+            with_separate_bias_ = true;
+            with_bias_epilogue_ = false;
         }
 
         const bool supports_ampere_layout = has_imma_ampere_layout_support(
@@ -343,11 +357,19 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         if (num_results == 0) { return status_t::dnnl_runtime_error; }
         gemm_algo_ = heuristic_results_.algo;
         algo_scratch_size_ = heuristic_results_.workspaceSize;
+
+        const auto dst_nelems = dst_d.nelems(true);
+        reorder_scratch_size_ = dst_nelems * sizeof(float);
+
         return status_t::dnnl_success;
     }
 
     void init_scratchpad(matmul_pd_t *pd) override {
         auto scratchpad = pd->scratchpad_registry().registrar();
+        if (reorder_scratch_size_ > 0) {
+            scratchpad.book(memory_tracking::names::key_matmul_dst_in_acc_dt,
+                    reorder_scratch_size_, 1, 256);
+        }
         if (algo_scratch_size_ > 0) {
             scratchpad.book(memory_tracking::names::key_matmul_lt_algo_scratch,
                     algo_scratch_size_, 1, 256);
@@ -388,15 +410,15 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         }
 
         cublasLtEpilogue_t epilogue = CUBLASLT_EPILOGUE_DEFAULT;
-        if (with_bias_) {
-            if (with_relu_) {
+        if (with_bias_epilogue_) {
+            if (with_relu_epilogue_) {
                 epilogue = CUBLASLT_EPILOGUE_RELU_BIAS;
             } else {
                 epilogue = CUBLASLT_EPILOGUE_BIAS;
             }
             CUBLAS_EXECUTE_FUNC(cublasLtMatmulDescSetAttribute, operation_desc_,
                     CUBLASLT_MATMUL_DESC_BIAS_POINTER, &bias, sizeof(bias));
-        } else if (with_relu_ && !with_bias_) {
+        } else if (with_relu_epilogue_ && !with_bias_epilogue_) {
             epilogue = CUBLASLT_EPILOGUE_RELU;
         }
         CUBLAS_EXECUTE_FUNC(cublasLtMatmulDescSetAttribute, operation_desc_,
@@ -541,8 +563,9 @@ private:
     cublasLtMatrixLayout_t blocked_c_layout_;
 
     bool with_bias_ = false;
+    bool with_bias_epilogue_ = false;
     bool with_relu_;
-
+    bool with_relu_epilogue_ = false;
     bool imma_case_ = false;
     bool imma_ampere_case_ = false;
     bool imma_plain_case_ = false;
@@ -643,15 +666,6 @@ private:
     }
 
     void create_non_blocked_layouts() {
-        auto maybe_swap
-                = [&](uint64_t &row, uint64_t &col, cublasOperation_t &op,
-                          cublasLtOrder_t order, bool transpose) {
-                      if (transpose) {
-                          std::swap(row, col);
-                          op = cublasOperation_t::CUBLAS_OP_T;
-                          order = CUBLASLT_ORDER_ROW;
-                      }
-                  };
 
         auto trans_op = cublasOperation_t::CUBLAS_OP_N;
         auto order = CUBLASLT_ORDER_COL;
@@ -729,6 +743,15 @@ private:
         const auto &md_strides = &md.blocking_desc().strides[isbatched_];
         return (md_strides[1] == 1 && md.dims()[isbatched_ + 0] > 1);
     }
+
+    void maybe_swap(uint64_t &row, uint64_t &col, cublasOperation_t &op,
+            cublasLtOrder_t order, bool transpose) {
+        if (transpose) {
+            std::swap(row, col);
+            op = cublasOperation_t::CUBLAS_OP_T;
+            order = CUBLASLT_ORDER_ROW;
+        }
+    };
 };
 
 } // namespace nvidia

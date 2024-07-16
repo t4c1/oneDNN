@@ -18,6 +18,7 @@
 #ifndef GPU_NVIDIA_CUDNN_MATMUL_BASE_IMPL_HPP
 #define GPU_NVIDIA_CUDNN_MATMUL_BASE_IMPL_HPP
 
+#include "cublasLt.h"
 #include "cudnn.h"
 
 #include "gpu/nvidia/engine.hpp"

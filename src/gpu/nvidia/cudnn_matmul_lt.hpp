@@ -65,7 +65,6 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                             has_bf16_support(sycl_engine_impl->device()))
                     && set_default_formats()
                     && (f32_case || f16_case || bf16_case || s8_case)
-                    && IMPLICATION(s8_case && imma_blocks(), !with_bias())
                     && IMPLICATION(with_bias(),
                             (IMPLICATION(f32_case, utils::one_of(bia_dt, f32))
                                     && IMPLICATION(f16_case,
@@ -73,8 +72,8 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                                     && IMPLICATION(bf16_case,
                                             utils::one_of(bia_dt, bf16, f32))
                                     && IMPLICATION(s8_case,
-                                            utils::one_of(bia_dt, s8, f32))))
-                    && !(with_bias() && s8_case)
+                                            utils::one_of(
+                                                    bia_dt, s8, s32, f32))))
                     && IMPLICATION(with_bias(), !has_runtime_dims_or_strides());
 
             memory_desc_wrapper weight_wrap(weights_md());
@@ -90,16 +89,34 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             if (!with_bias() && !with_eltwise() && !s8_case) {
                 return status::unimplemented;
             }
-            if (s8_case
-                    && ((with_bias() && bias_ok())
-                            || (with_eltwise() && eltwise_ok()))) {
+            if (s8_case && with_eltwise() && eltwise_ok()) {
                 return status::unimplemented;
             }
 
             if (src_md()->ndims > 3) return status::unimplemented;
 
+            primitive_attr_t binary_attr;
+
+            auto binary_desc = binary_desc_t();
+            binary_desc.primitive_kind = primitive_kind::binary;
+            binary_desc.alg_kind = alg_kind::binary_add;
+            binary_desc.src_desc[0] = *dst_md();
+            binary_desc.src_desc[1] = *weights_md(1);
+            binary_desc.dst_desc = *dst_md();
+
+            primitive_desc_iterator_t it(
+                    engine, (op_desc_t *)&binary_desc, &binary_attr, nullptr);
+            while (++it != it.end()) {
+                binary_pd_ = *it;
+                if (binary_pd_) { break; }
+            }
+
+            if (!binary_pd_) return status::unimplemented;
+
             return status::success;
         }
+
+        std::shared_ptr<primitive_desc_t> binary_pd_;
 
     private:
         bool dst_ok() {
@@ -121,13 +138,12 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
 
         bool bias_ok() {
 
+            if (!with_bias()) { return true; }
             memory_desc_wrapper dst_wrap(dst_md());
             memory_desc_wrapper bia_wrap(weights_md(1));
 
             bool isbatched = batched() && dst_wrap.dims()[0];
-            if (!with_bias()) { return true; }
-            bool ok = !(bia_wrap.data_type() != dst_wrap.data_type());
-            if (bia_wrap.dims()[0 + isbatched] != 1) { ok = false; }
+            if (bia_wrap.dims()[0 + isbatched] != 1) { return false; }
 
             if (!has_runtime_dims_or_strides()) {
                 auto M = dst_wrap.dims()[isbatched + 1];
@@ -135,10 +151,10 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                 if ((bia_wrap.dims()[1 + isbatched] != M
                             || bia_wrap.dims()[0 + isbatched] != 1)
                         || M == 1 || N == 1) {
-                    ok = false;
+                    return false;
                 }
             }
-            return ok;
+            return true;
         }
 
         bool with_eltwise() {
@@ -189,12 +205,16 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
         } else if (!has_runtime_args) {
             executor_.reset(new cudnn_matmul_lt_exec_t);
         }
+        if (status == dnnl_success) {
+            status = create_nested_primitive(binary_, pd()->binary_pd_, engine);
+        }
 
         return status;
     }
 
     status_t execute(const exec_ctx_t &ctx) const override;
 
+    std::shared_ptr<impl::primitive_t> binary_;
     std::shared_ptr<cudnn_matmul_lt_impl_t> matmul_impl_;
     std::shared_ptr<cudnn_matmul_lt_base_exec_t> executor_;
 
