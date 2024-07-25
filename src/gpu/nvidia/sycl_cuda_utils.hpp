@@ -190,7 +190,7 @@ static status_t convert_data_type(const memory_desc_t *mem_desc,
 }
 
 inline bool is_md_col32(const memory_desc_wrapper &md) {
-    if (md.blocking_desc().inner_nblks == 1) {
+    if (md.is_blocking_desc()) {
         if (md.blocking_desc().inner_idxs[md.ndims() - 2] == 0
                 && md.blocking_desc().inner_blks[md.ndims() - 2] == 32) {
             return true;

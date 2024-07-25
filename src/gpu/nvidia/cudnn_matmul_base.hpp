@@ -20,6 +20,9 @@
 
 #include "gpu/gpu_matmul_pd.hpp"
 
+#include "common/primitive.hpp"
+#include "common/primitive_desc_iterator.hpp"
+#include "gpu/gpu_primitive.hpp"
 #include "gpu/nvidia/cudnn_matmul_executor.hpp"
 #include "gpu/nvidia/cudnn_matmul_impl.hpp"
 #include "gpu/nvidia/cudnn_matmul_lt_impl.hpp"
@@ -48,17 +51,6 @@ struct cudnn_matmul_base_t : public primitive_t {
         }
 
     protected:
-        bool scales_ok() const {
-            const auto &scales = attr()->scales_;
-            const auto &supported_args
-                    = {DNNL_ARG_SRC, DNNL_ARG_WEIGHTS, DNNL_ARG_DST};
-            if (!scales.has_default_values(supported_args)) return false;
-            // cuDNN does not support scaling per dimension.
-            for (auto arg : supported_args)
-                if (scales.get(arg).mask_ != 0) return false;
-            return true;
-        }
-
         bool blocking_ok() const {
             std::vector<const memory_desc_t *> mds
                     = {src_md(), dst_md(), weights_md(0)};
@@ -72,7 +64,6 @@ struct cudnn_matmul_base_t : public primitive_t {
             return true;
         }
     };
-
 };
 
 } // namespace nvidia

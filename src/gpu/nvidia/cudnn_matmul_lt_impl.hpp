@@ -65,8 +65,23 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         N_ = static_cast<uint64_t>(dst_d.dims()[isbatched_ + 0]);
         K_ = static_cast<uint64_t>(src_d.dims()[isbatched_ + 1]);
 
+        if (!pd->attr()->scales_.get(DNNL_ARG_SRC).has_default_values()) {
+            auto src_scale = pd->attr()->scales_.get(DNNL_ARG_SRC);
+            if (src_scale.mask_ != 0) { multi_src_scale_ = true; }
+        }
+
+        if (!pd->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values()) {
+            auto wei_scale = pd->attr()->scales_.get(DNNL_ARG_WEIGHTS);
+            if (wei_scale.mask_ != 0) { multi_wei_scale_ = true; }
+        }
+
         with_dst_scale_
                 = !pd->attr()->scales_.get(DNNL_ARG_DST).has_default_values();
+        if (with_dst_scale_) {
+            auto dst_scale = pd->attr()->scales_.get(DNNL_ARG_DST);
+            if (dst_scale.mask_ != 0) { multi_dst_scale_ = true; }
+        }
+
         with_bias_ = pd->with_bias();
 
         bool dst_row_major = !is_md_col_major(dst_d);
@@ -124,14 +139,19 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         }
 
         // Imma case only supports default epilogue
-        if (imma_case_ && with_relu_epilogue_) {
-            return status::unimplemented;
-        }
+        if (imma_case_ && with_relu_epilogue_) { return status::unimplemented; }
 
         // we use separate bias to support imma case
         if (imma_case_ && with_bias_epilogue_) {
             with_separate_bias_ = true;
             with_bias_epilogue_ = false;
+        }
+
+        // if dst case is single value but we have post ops
+        if (with_dst_scale_
+                && (with_bias_epilogue_ || with_separate_bias_
+                        || with_relu_epilogue_)) {
+            multi_dst_scale_ = true;
         }
 
         const bool supports_ampere_layout = has_imma_ampere_layout_support(
@@ -160,8 +180,6 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         if (dst_d.data_type() == dnnl_s8) {
             alpha_beta_size_bytes_ = sizeof(float);
         }
-        alpha_ = std::malloc(alpha_beta_size_bytes_);
-        beta_ = std::malloc(alpha_beta_size_bytes_);
 
         // Initialise all gemm parameters
         if (!has_runtime_params_) {
@@ -238,6 +256,9 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
             const memory_desc_wrapper dst_d, const memory_desc_wrapper bias_d,
             impl::engine_t *engine) {
 
+        alpha_ = std::malloc(alpha_beta_size_bytes_);
+        beta_ = std::malloc(alpha_beta_size_bytes_);
+
         auto &sycl_engine = *utils::downcast<nvidia::engine_t *>(engine);
         impl::stream_t *service_stream;
         CHECK(sycl_engine.get_service_stream(service_stream));
@@ -300,18 +321,18 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
             stride_b_blocked_
                     = ceildiv(K_, static_cast<uint64_t>(32)) * b_blocked_ld_;
             source_size_
-                    = batch_count_ * stride_b_blocked_ * src_d.data_type_size();
+                    = batch_count_ * stride_b_blocked_ * src_d.data_type_size()*32;
             stride_a_blocked_
                     = ceildiv(K_, static_cast<uint64_t>(32)) * a_blocked_ld_;
             if (!w_blocked_) {
                 weight_size_ = batch_count_ * stride_a_blocked_
-                        * weights_d.data_type_size();
+                        * weights_d.data_type_size() * 32;
             }
             stride_c_blocked_
                     = ceildiv(N_, static_cast<uint64_t>(32)) * c_blocked_ld_;
             if (!dst_blocked_) {
                 dest_size_ = batch_count_ * stride_c_blocked_
-                        * dst_d.data_type_size();
+                        * dst_d.data_type_size() * 32;
             }
         }
         return status::success;
@@ -361,6 +382,9 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         const auto dst_nelems = dst_d.nelems(true);
         reorder_scratch_size_ = dst_nelems * sizeof(float);
 
+        if (multi_src_scale_) { src_scale_size_ = src_d.size(); }
+        if (multi_wei_scale_) { wei_scale_size_ = weights_d.size(); }
+
         return status_t::dnnl_success;
     }
 
@@ -386,13 +410,25 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
             scratchpad.book(memory_tracking::names::key_matmul_lt_block_c,
                     dest_size_, 1, 256);
         }
+        if (src_scale_size_ > 0) {
+            scratchpad.book(memory_tracking::names::key_matmul_lt_src_scale,
+                    src_scale_size_, 1, 256);
+        }
+        if (wei_scale_size_ > 0) {
+            scratchpad.book(memory_tracking::names::key_matmul_lt_wei_scale,
+                    wei_scale_size_, 1, 256);
+        }
     }
 
     void execute(cublasHandle_t cublas_handle, cudnnHandle_t cudnn_handle,
             void *a, void *b, void *c, void *bias, void *algo_scratch,
             void *reorder_scratch, void *block_a_scratch, void *block_b_scratch,
-            void *block_c_scratch, void *src_scale, void *wei_scale,
-            void *dst_scale) {
+            void *block_c_scratch, void *scaled_src, void *scaled_wt,
+            void *src_scale, void *wei_scale, void *dst_scale) {
+
+        // read from binary output instead of input if multi scale
+        if (multi_src_scale_) { b = scaled_src; }
+        if (multi_wei_scale_) { a = scaled_wt; }
 
         cudaStream_t streamId;
         auto lt_handle = (cublasLtHandle_t)(cublas_handle);
@@ -426,23 +462,23 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
 
         float scale = 1.0f;
         float host_dst_scale = 1.0f;
-        if (src_scale) {
+        if (src_scale && !multi_src_scale_) {
             float host_src_scale = 1.0f;
             CUDA_EXECUTE_FUNC(cuMemcpyAsync, (CUdeviceptr)&host_src_scale,
                     (CUdeviceptr)src_scale, sizeof(float), streamId);
             scale *= host_src_scale;
         }
-        if (wei_scale) {
+        if (wei_scale && !multi_wei_scale_) {
             float host_wei_scale = 1.0f;
             CUDA_EXECUTE_FUNC(cuMemcpyAsync, (CUdeviceptr)&host_wei_scale,
                     (CUdeviceptr)wei_scale, sizeof(float), streamId);
             scale *= host_wei_scale;
         }
-        if (dst_scale) {
+        if (dst_scale && !multi_dst_scale_) {
             CUDA_EXECUTE_FUNC(cuMemcpyAsync, (CUdeviceptr)&host_dst_scale,
                     (CUdeviceptr)dst_scale, sizeof(float), streamId);
-            // For eltwise post-ops, apply the dst scale afterward
-            if (!with_separate_eltwise_) scale /= host_dst_scale;
+            // only applied here if no post ops used
+            scale /= host_dst_scale;
         }
 
         if (acc_type_ == CUDA_R_16F) {
@@ -545,12 +581,43 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         }
     }
 
+    void handle_imma_case(const memory_desc_wrapper &src_d,
+            const memory_desc_wrapper &weights_d,
+            const memory_desc_wrapper &dst_d) {
+        if (src_d.data_type() == dnnl_s8 && weights_d.data_type() == dnnl_s8
+                && (dst_d.data_type() == dnnl_s32
+                        || dst_d.data_type() == dnnl_s8)) {
+            // weights blocked in Ab32a
+            w_blocked_ = is_md_col32(weights_d);
+            bool weights_supported = w_blocked_ || weights_d.is_plain();
+
+            // src not blocked
+            bool src_supported = src_d.is_plain();
+
+            // dst blocked in Ab32a
+            dst_blocked_ = is_md_col32(dst_d);
+            bool dst_supported = dst_blocked_ || dst_d.is_plain();
+
+            imma_case_ = weights_supported && src_supported && dst_supported;
+            if (imma_case_) {
+                CUBLAS_EXECUTE_FUNC(cublasLtMatrixTransformDescCreate,
+                        &trans_desc_, CUDA_R_32I);
+            }
+        }
+    }
+
     bool is_imma_case() { return imma_case_; }
 
     size_t algo_scratch_size() { return algo_scratch_size_; }
     size_t block_a_scratch_size() { return source_size_; }
     size_t block_b_scratch_size() { return weight_size_; }
     size_t block_c_scratch_size() { return dest_size_; }
+    size_t src_scale_size() { return src_scale_size_; }
+    size_t wei_scale_size() { return wei_scale_size_; }
+
+    bool multi_src_scale() { return multi_src_scale_; }
+    bool multi_wei_scale() { return multi_wei_scale_; }
+    bool multi_dst_scale() { return multi_dst_scale_; }
 
 private:
     cublasLtMatmulDesc_t operation_desc_;
@@ -562,6 +629,13 @@ private:
     cublasLtMatrixLayout_t blocked_b_layout_;
     cublasLtMatrixLayout_t blocked_c_layout_;
 
+    bool multi_src_scale_ = false;
+    bool multi_wei_scale_ = false;
+    bool multi_dst_scale_ = false;
+
+    size_t src_scale_size_ = 0;
+    size_t wei_scale_size_ = 0;
+
     bool with_bias_ = false;
     bool with_bias_epilogue_ = false;
     bool with_relu_;
@@ -572,9 +646,9 @@ private:
     bool w_blocked_ = false;
     bool dst_blocked_ = false;
     cublasLtMatrixTransformDesc_t trans_desc_;
-    int source_size_;
-    int weight_size_;
-    int dest_size_;
+    uint64_t source_size_;
+    uint64_t weight_size_;
+    uint64_t dest_size_;
 
     uint64_t M_, N_, K_;
 
@@ -638,31 +712,6 @@ private:
         CUBLAS_EXECUTE_FUNC(cublasLtMatrixTransform, handle, trans_desc_,
                 &alpha, in, in_layout, &beta, out, out_layout, out, out_layout,
                 stream);
-    }
-
-    void handle_imma_case(const memory_desc_wrapper &src_d,
-            const memory_desc_wrapper &weights_d,
-            const memory_desc_wrapper &dst_d) {
-        if (src_d.data_type() == dnnl_s8 && weights_d.data_type() == dnnl_s8
-                && (dst_d.data_type() == dnnl_s32
-                        || dst_d.data_type() == dnnl_s8)) {
-            // weights blocked in Ab32a
-            w_blocked_ = is_md_col32(weights_d);
-            bool weights_supported = w_blocked_ || weights_d.is_plain();
-
-            // src not blocked
-            bool src_supported = src_d.is_plain();
-
-            // dst blocked in Ab32a
-            dst_blocked_ = is_md_col32(dst_d);
-            bool dst_supported = dst_blocked_ || dst_d.is_plain();
-
-            imma_case_ = weights_supported && src_supported && dst_supported;
-            if (imma_case_) {
-                CUBLAS_EXECUTE_FUNC(cublasLtMatrixTransformDescCreate,
-                        &trans_desc_, CUDA_R_32I);
-            }
-        }
     }
 
     void create_non_blocked_layouts() {

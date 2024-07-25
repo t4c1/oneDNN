@@ -248,6 +248,8 @@ enum {
     key_matmul_wei_trans,
     key_matmul_dst_trans,
     key_matmul_dst_cast_acc,
+    key_matmul_lt_src_scale,
+    key_matmul_lt_wei_scale,
     key_pool_dst_bf16cvt,
     key_pool_dst_plain2blocked_cvt,
     key_pool_ind_plain2blocked_cvt,

@@ -22,7 +22,7 @@
 
 #include "gpu/nvidia/cudnn_matmul_executor.hpp"
 #include "gpu/nvidia/cudnn_matmul_impl.hpp"
-#include "gpu/nvidia/cudnn_matmul_lt_impl.hpp"
+#include "gpu/nvidia/cudnn_matmul_base.hpp"
 #include "gpu/nvidia/sycl_cuda_utils.hpp"
 
 namespace dnnl {
@@ -87,6 +87,16 @@ struct cudnn_matmul_t : cudnn_matmul_base_t {
             return dst_nelems * sizeof(float);
         }
 
+        bool scales_ok() const {
+            const auto &scales = attr()->scales_;
+            const auto &supported_args
+                    = {DNNL_ARG_SRC, DNNL_ARG_WEIGHTS, DNNL_ARG_DST};
+            if (!scales.has_default_values(supported_args)) return false;
+            // cuDNN does not support scaling per dimension.
+            for (auto arg : supported_args)
+                if (scales.get(arg).mask_ != 0) return false;
+            return true;
+        }
     };
 
     status_t init(impl::engine_t *engine) override {
