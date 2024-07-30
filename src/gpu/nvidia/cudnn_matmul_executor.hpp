@@ -175,9 +175,8 @@ protected:
         if (reorder_scratch_size > 0) {
             bias_scratch_buff_.reset(
                     new ::sycl::buffer<uint8_t, 1>(reorder_scratch_size));
+            cudaDeviceSynchronize();
         }
-
-        if (reorder_scratch_size > 0) { cudaDeviceSynchronize(); }
     }
 
     std::shared_ptr<::sycl::buffer<uint8_t, 1>> bias_scratch_buff_ {nullptr};

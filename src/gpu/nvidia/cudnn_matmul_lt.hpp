@@ -76,6 +76,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                                             utils::one_of(bia_dt, bf16, f32))
                                     && IMPLICATION(s8_case,
                                             utils::one_of(bia_dt, s8, s32, f32))
+                                    && IMPLICATION(s8_case, scales_ok())
                                     && IMPLICATION(!s8_case, bia_dt == dst_dt)))
                     && IMPLICATION(with_bias(), !has_runtime_dims_or_strides());
 
@@ -232,6 +233,20 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             return false;
         }
 
+        bool scales_ok() {
+            data_type_t src_scale_dt
+                    = attr()->scales_.get(DNNL_ARG_SRC).data_type_;
+            data_type_t wei_scale_dt
+                    = attr()->scales_.get(DNNL_ARG_WEIGHTS).data_type_;
+            bool src_scales_ok = single_scale(DNNL_ARG_SRC)
+                    || utils::one_of(
+                            src_scale_dt, data_type::s8, data_type::s32);
+            bool wei_scales_ok = single_scale(DNNL_ARG_WEIGHTS)
+                    || utils::one_of(
+                            wei_scale_dt, data_type::s8, data_type::s32);
+            return src_scales_ok && wei_scales_ok;
+        }
+
         bool dst_ok() {
             bool ok = false;
 
@@ -279,8 +294,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                                             dst_wrap.dims()[isbatched])
                             || bia_wrap.dims()[0 + isbatched] != 1)
                     || static_cast<uint64_t>(dst_wrap.dims()[isbatched]) == 1
-                    || static_cast<uint64_t>(dst_wrap.dims()[isbatched])
-                            == 1) {
+                    || static_cast<uint64_t>(dst_wrap.dims()[isbatched]) == 1) {
                 return true;
             }
             return false;
@@ -292,8 +306,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
         }
 
         bool eltwise_ok() {
-            bool with_elt = with_eltwise();
-            if (!with_elt) { return true; }
+            if (!with_eltwise()) { return true; }
 
             int eltwise_idx_ = attr()->post_ops_.find(primitive_kind::eltwise);
             auto eltwise_algo
