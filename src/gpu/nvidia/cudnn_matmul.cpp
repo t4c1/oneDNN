@@ -96,8 +96,6 @@ status_t cudnn_matmul_lt_t::execute(const exec_ctx_t &ctx) const {
                 src_d, weights_d, dst_d, bias_d, engine);
         if (status != status::success) return status;
 
-        matmul_impl_->handle_imma_case(src_d, weights_d, dst_d);
-
         algo_scratchpad_size = matmul_impl_->algo_scratch_size();
         bias_scratchpad_size = matmul_impl_->bias_scratch_size();
         block_a_scratchpad_size = matmul_impl_->block_a_scratch_size();
@@ -199,7 +197,7 @@ status_t cudnn_matmul_lt_t::execute(const exec_ctx_t &ctx) const {
             e.wait();
         }
 
-        matmul_impl_->cleanup();
+        // matmul_impl_->cleanup();
     }
 
     return status;

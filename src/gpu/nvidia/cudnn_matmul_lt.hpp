@@ -28,10 +28,10 @@ namespace nvidia {
 struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
     using cudnn_matmul_base_t::cudnn_matmul_base_t;
 
-    struct pd_t : public pd_base_t {
-        using pd_base_t::pd_base_t;
+    struct pd_t : public cudnn_matmul_base_pd_t {
+        using cudnn_matmul_base_pd_t::cudnn_matmul_base_pd_t;
 
-        DECLARE_COMMON_PD_T("cuda:cudnn:any", cudnn_matmul_lt_t);
+        DECLARE_COMMON_PD_T("cuda:cublaslt:any", cudnn_matmul_lt_t);
 
         status_t init(impl::engine_t *engine) override {
             using namespace data_type;
@@ -48,10 +48,16 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             bool bf16_case = utils::everyone_is(bf16, src_dt, wei_dt, dst_dt);
 #ifdef DNNL_NO_IMMA_INT8_DST
             bool s8_case = utils::everyone_is(s8, src_dt, wei_dt)
-                    && utils::one_of(dst_dt, s8, s32);
-#else
-            bool s8_case = utils::everyone_is(s8, src_dt, wei_dt)
                     && utils::one_of(dst_dt, s32);
+#else
+            bool s8_case = false;
+            if (has_imma_dst_int8_support()) {
+                s8_case = utils::everyone_is(s8, src_dt, wei_dt)
+                        && utils::one_of(dst_dt, s8, s32);
+            } else {
+                s8_case = utils::everyone_is(s8, src_dt, wei_dt)
+                        && utils::one_of(dst_dt, s32);
+            }
 #endif
             auto *sycl_engine_impl
                     = utils::downcast<const xpu::sycl::engine_impl_t *>(
@@ -376,9 +382,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
     std::shared_ptr<cudnn_matmul_lt_base_exec_t> executor_;
 
 private:
-    const pd_t *pd() const {
-        return (const pd_t *)primitive_t::pd().get();
-    }
+    const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 };
 
 } // namespace nvidia

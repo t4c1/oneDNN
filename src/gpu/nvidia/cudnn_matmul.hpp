@@ -33,8 +33,8 @@ namespace nvidia {
 struct cudnn_matmul_t : cudnn_matmul_base_t {
     using cudnn_matmul_base_t::cudnn_matmul_base_t;
 
-    struct pd_t : public pd_base_t {
-        using pd_base_t::pd_base_t;
+    struct pd_t : public cudnn_matmul_base_pd_t {
+        using cudnn_matmul_base_pd_t::cudnn_matmul_base_pd_t;
 
         DECLARE_COMMON_PD_T("cuda:cudnn:any", cudnn_matmul_t);
 

@@ -33,10 +33,10 @@ namespace impl {
 namespace gpu {
 namespace nvidia {
 
-struct cudnn_matmul_base_t : public primitive_t {
+struct cudnn_matmul_base_t : public gpu::primitive_t {
     using primitive_t::primitive_t;
 
-    struct pd_base_t : public gpu_matmul_pd_t {
+    struct cudnn_matmul_base_pd_t : public gpu_matmul_pd_t {
         using gpu_matmul_pd_t::gpu_matmul_pd_t;
         virtual status_t init(impl::engine_t *engine) = 0;
 
