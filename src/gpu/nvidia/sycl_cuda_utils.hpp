@@ -61,6 +61,7 @@ bool compare_cuda_devices(const ::sycl::device &lhs, const ::sycl::device &rhs);
 cudaDeviceProp query_device_properties(const ::sycl::device &dev);
 bool has_bf16_support(const ::sycl::device &dev);
 bool has_imma_ampere_layout_support(const ::sycl::device &dev);
+bool has_imma_dst_int8_support();
 
 // Check if the device type matches the passed engine kind
 inline status_t check_device(dnnl::impl::engine_kind_t eng_kind) {

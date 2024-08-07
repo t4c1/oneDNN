@@ -79,6 +79,14 @@ bool has_imma_ampere_layout_support(const ::sycl::device &dev) {
     return prop.major == 8;
 }
 
+bool has_imma_dst_int8_support() {
+    // This function checks cuda runtime version capabilities.
+    // Int8 dst imma kernels are supported starting with cuda version 12.x.x.
+    int rt_version;
+    cudaRuntimeGetVersion(&rt_version);
+    return rt_version >= 12000;
+}
+
 } // namespace nvidia
 } // namespace gpu
 } // namespace impl
