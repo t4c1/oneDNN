@@ -355,8 +355,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             memory_desc_wrapper dst_wrap(dst_md());
             if (dst_wrap.format_any()) {
                 auto n_dims = batched() ? 3 : 2;
-                auto tag
-                        = batched() ? format_tag::aBc32b : format_tag::Ab32a;
+                auto tag = batched() ? format_tag::aBc32b : format_tag::Ab32a;
                 memory_desc_init_by_tag(this->dst_md_, n_dims, dst_wrap.dims(),
                         dst_wrap.data_type(), tag);
             }
@@ -366,15 +365,15 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
 
                 auto ceildiv = [](dim_t n, dim_t d) { return (n + d - 1) / d; };
 
-                auto n_rows
-                        = ceildiv(w_wrap.dims()[batched()], 32);
-                auto n_cols = w_wrap.dims()[batched() + 1];
+                auto n_rows = 32 * ceildiv(w_wrap.dims()[batched()], 32);
+                auto n_cols = 32 * ceildiv(w_wrap.dims()[batched() + 1], 32);
                 auto n_batch = batched() ? w_wrap.dims()[0] : 1;
                 size_t size = n_batch * n_rows * n_cols;
 
                 this->weights_md_.format_kind = format_kind::cublaslt_blocked;
-                this->weights_md_.format_desc.cublaslt_blocked_desc = cublaslt_blocked_desc_t {
-                        cublaslt_memory_format_t::ampere_blocked, size};
+                this->weights_md_.format_desc.cublaslt_blocked_desc
+                        = cublaslt_blocked_desc_t {
+                                cublaslt_memory_format_t::ampere_blocked, size};
             }
         }
     };
