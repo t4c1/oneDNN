@@ -196,8 +196,9 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
                     || w_blocked_ || weights_d.is_plain();
 
             // src not blocked
-            bool src_supported
-                    = src_d.has_runtime_dims_or_strides() || src_d.is_plain();
+            src_blocked_ = src_d.is_cublaslt_blocked_desc();
+            bool src_supported = src_d.has_runtime_dims_or_strides()
+                    || src_blocked_ || src_d.is_plain();
 
             // dst blocked in Ab32a
             dst_blocked_ = is_md_col32(dst_d);
@@ -289,18 +290,16 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
             const memory_desc_wrapper weights_d,
             const memory_desc_wrapper dst_d) override {
         // C matrix is the dst
-        trans_c_ = is_md_col_major(dst_d) ? cublasOperation_t::CUBLAS_OP_N
-                                          : cublasOperation_t::CUBLAS_OP_T;
+        trans_c_ = !is_md_col_major(dst_d);
         // A matrix is the weights
-        trans_a_ = is_md_col_major(weights_d) ? cublasOperation_t::CUBLAS_OP_N
-                                              : cublasOperation_t::CUBLAS_OP_T;
+        trans_a_ = !is_md_col_major(weights_d);
+
         // B matrix is the src
-        trans_b_ = is_md_col_major(src_d) ? cublasOperation_t::CUBLAS_OP_N
-                                          : cublasOperation_t::CUBLAS_OP_T;
+        trans_b_ = !w_blocked_ ? !is_md_col_major(src_d) : false;
         if (imma_ampere_case_) {
             // IMMA kernels support only NT->N config
-            if (w_blocked_) { trans_a_ = cublasOperation_t::CUBLAS_OP_N; }
-            if (dst_blocked_) { trans_c_ = cublasOperation_t::CUBLAS_OP_N; }
+            if (w_blocked_) { trans_a_ = false; }
+            if (dst_blocked_) { trans_c_ = false; }
         }
 
         if (dst_d.data_type() == dnnl_s8 || dst_d.data_type() == dnnl_bf16) {
@@ -651,6 +650,7 @@ private:
     bool imma_ampere_case_ = false;
     bool imma_plain_case_ = false;
     bool w_blocked_ = false;
+    bool src_blocked_ = false;
     bool dst_blocked_ = false;
     cublasLtMatrixTransformDesc_t trans_desc_;
     uint64_t source_size_ = 0;
@@ -663,7 +663,7 @@ private:
             stride_b_blocked_, stride_c_blocked_, a_blocked_ld_, b_blocked_ld_,
             c_blocked_ld_;
 
-    bool trans_a_, trans_b_, trans_c_;
+    bool trans_a_ = false, trans_b_ = false, trans_c_ = false;
 
     cublasComputeType_t compute_type_ = CUBLAS_COMPUTE_32F;
 
