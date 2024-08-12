@@ -103,9 +103,6 @@ struct ref_binary_t : public gpu::generic::sycl::primitive_t {
                 const memory_desc_wrapper &dst) {
             using namespace format_tag;
 
-            for (const auto &mdw : {src0, src1, dst}) {
-                if (!mdw.is_plain()) { return false; }
-            }
             return true;
         }
     };
