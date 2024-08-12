@@ -63,11 +63,10 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                     = utils::downcast<const xpu::sycl::engine_impl_t *>(
                             engine->impl());
 
-            bool is_imma_blocks = imma_blocks();
             bool is_eltwise_ok = eltwise_ok();
 
             bool ok = is_dense_format_kind()
-                    && (blocking_ok() || is_imma_blocks)
+                    && blocking_ok()
                     && attr()->has_default_values(smask_t::scales_runtime)
                     && attr_post_ops_ok(attr())
                     && IMPLICATION(bf16_case,
@@ -93,6 +92,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                     && IMPLICATION(
                             is_md_col32(weight_wrap) || is_md_col32(dst_wrap),
                             s8_case);
+            bool is_imma_blocks = imma_blocks();
             ok = ok && (is_imma_blocks || dst_ok()) && bias_ok()
                     && is_eltwise_ok;
             if (!ok) return status::unimplemented;
@@ -125,7 +125,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                 }
                 if (!binary_pd_) return status::unimplemented;
             }
-            status_t status;
+            status_t status = status_t::dnnl_success;
             if (!single_scale(DNNL_ARG_SRC)) {
                 auto scale_md = dnnl_memory_desc();
                 scale_md.ndims = attr()->scales_.get(DNNL_ARG_SRC).ndims_;
@@ -155,7 +155,8 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                         wei_scale_binary_pd_, weights_md(0), scale_md,
                         alg_kind::binary_mul);
             }
-            if (status == status_t::dnnl_success) {
+            if (!single_scale(DNNL_ARG_DST)
+                    && status == status_t::dnnl_success) {
                 auto scale_md = dnnl_memory_desc();
                 scale_md.ndims = attr()->scales_.get(DNNL_ARG_DST).ndims_;
                 scale_md.data_type
@@ -374,11 +375,12 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
 
                 this->src_md_.padded_dims[batched()] = n_rows;
                 this->src_md_.padded_dims[batched() + 1] = n_cols;
-                this->src_md_.format_kind = dnnl_format_kind_opaque;
+                this->src_md_.format_kind = format_kind::cublaslt_blocked;
                 this->src_md_.format_desc.cublaslt_blocked_desc
                         = cublaslt_blocked_desc_t {
                                 cublaslt_memory_format_t::ampere_blocked, size};
             }
+            return true;    
         }
     };
 
