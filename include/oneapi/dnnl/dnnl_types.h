@@ -1020,6 +1020,7 @@ typedef enum {
     dnnl_AcdeB4b8a4b,
     dnnl_Ab4a,
     dnnl_Ab8a,
+    dnnl_Ab32a,
     dnnl_BA4b4a,
     dnnl_BA8b4a,
     dnnl_BA2a24b,

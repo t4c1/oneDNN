@@ -72,7 +72,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                     && attr_post_ops_ok(attr())
                     && IMPLICATION(bf16_case,
                             has_bf16_support(sycl_engine_impl->device()))
-                    && set_default_formats()
+                    && set_default_formats_lt()
                     && (f32_case || f16_case || bf16_case || s8_case)
                     && IMPLICATION(with_bias(),
                             (IMPLICATION(f32_case, utils::one_of(bia_dt, f32))
@@ -339,6 +339,43 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                 dst_supported = true;
             }
             return (weights_supported && src_supported && dst_supported);
+        }
+        bool set_default_formats_lt() {
+            // auto src_md = src_md();
+            auto w_md = weights_md(0);
+
+            memory_desc_wrapper src_wrap(this->src_md_);
+            if (src_wrap.format_any()) {
+                auto n_dims = batched() ? 3 : 2;
+                auto tag = batched() ? format_tag::aBc32b : format_tag::Ab32a;
+                memory_desc_init_by_tag(this->src_md_, n_dims, src_wrap.dims(),
+                        src_wrap.data_type(), tag);
+            }
+
+            memory_desc_wrapper dst_wrap(dst_md());
+            if (dst_wrap.format_any()) {
+                auto n_dims = batched() ? 3 : 2;
+                auto tag
+                        = batched() ? format_tag::aBc32b : format_tag::Ab32a;
+                memory_desc_init_by_tag(this->dst_md_, n_dims, dst_wrap.dims(),
+                        dst_wrap.data_type(), tag);
+            }
+
+            memory_desc_wrapper w_wrap(weights_md());
+            if (w_wrap.format_any()) {
+
+                auto ceildiv = [](dim_t n, dim_t d) { return (n + d - 1) / d; };
+
+                auto n_rows
+                        = ceildiv(w_wrap.dims()[batched()], 32);
+                auto n_cols = w_wrap.dims()[batched() + 1];
+                auto n_batch = batched() ? w_wrap.dims()[0] : 1;
+                size_t size = n_batch * n_rows * n_cols;
+
+                this->weights_md_.format_kind = format_kind::cublaslt_blocked;
+                this->weights_md_.format_desc.cublaslt_blocked_desc = cublaslt_blocked_desc_t {
+                        cublaslt_memory_format_t::ampere_blocked, size};
+            }
         }
     };
 

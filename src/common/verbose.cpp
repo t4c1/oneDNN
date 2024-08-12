@@ -513,6 +513,7 @@ std::string md2fmt_str(const memory_desc_t *md, format_kind_t user_format) {
             break;
         case format_kind::wino:
         case format_kind::rnn_packed:
+        case format_kind::cublaslt_blocked:
         case format_kind::opaque: ss << "::"; break;
         case format_kind::sparse: ss << ":" << mdw.encoding() << ":"; break;
         case format_kind::any: ss << ":any:"; break;
