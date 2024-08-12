@@ -191,8 +191,10 @@ static status_t convert_data_type(const memory_desc_t *mem_desc,
 }
 
 inline bool is_md_col32(const memory_desc_wrapper &md) {
+    // cublas operates in col-major so this function checks if the rows are blocked in 32.
     if (md.is_blocking_desc()) {
-        if (md.blocking_desc().inner_idxs[md.ndims() - 2] == 0
+        if (md.blocking_desc().inner_nblks == 1
+                && md.blocking_desc().inner_idxs[md.ndims() - 2] == 0
                 && md.blocking_desc().inner_blks[md.ndims() - 2] == 32) {
             return true;
         }
@@ -243,7 +245,7 @@ protected:
 public:
     explicit cublas_error(const std::string &message, cublasStatus_t result)
         : std::runtime_error(
-                (message + std::string(cublas_error_map(result)))) {
+                  (message + std::string(cublas_error_map(result)))) {
         error_number_ = static_cast<int>(result);
     }
 
@@ -279,7 +281,7 @@ public:
 
     explicit cuda_error(const std::string &message, cudaError_t result)
         : std::runtime_error(
-                (message + std::to_string(static_cast<int>(result)))) {
+                  (message + std::to_string(static_cast<int>(result)))) {
         error_number_ = static_cast<int>(result);
     }
     virtual ~cuda_error() throw() {}
@@ -323,7 +325,7 @@ protected:
 public:
     explicit cudnn_error(const std::string &message, cudnnStatus_t result)
         : std::runtime_error(
-                (message + std::string(cudnn_get_error_string(result)))) {
+                  (message + std::string(cudnn_get_error_string(result)))) {
         error_number_ = static_cast<int>(result);
     }
 

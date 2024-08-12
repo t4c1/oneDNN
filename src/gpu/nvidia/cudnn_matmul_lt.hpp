@@ -257,11 +257,16 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             bool ok = false;
 
             memory_desc_wrapper dst_wrap(dst_md());
-            //check if dst is col_major
             bool isbatched = batched() && dst_wrap.dims()[0];
-            const auto &md_strides
-                    = &dst_wrap.blocking_desc().strides[isbatched];
-            ok = (md_strides[1] == 1 && dst_wrap.dims()[isbatched + 0] > 1);
+            //check if dst is col_major
+            if (dst_wrap.is_plain()) {
+                const auto &md_strides
+                        = &dst_wrap.blocking_desc().strides[isbatched];
+                ok = (md_strides[1] == 1 && dst_wrap.dims()[isbatched + 0] > 1);
+            } else {
+                // Ensure blocked format is Ab32a or aBc32b
+                ok = is_md_col32(*dst_md());
+            }
             // dst not supported for ndims = 1
             ok = ok
                     && (dst_wrap.dims()[isbatched + 1] != 1
@@ -328,10 +333,10 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             if (is_md_col32(weight_wrap) || weight_wrap.is_plain()) {
                 weights_supported = true;
             }
-            // src not blocked
+            // src plain format or internal cublaslt format
             bool src_supported = false;
             memory_desc_wrapper src_wrap(src_md());
-            if (src_wrap.is_plain()) { src_supported = true; }
+            if (src_wrap.is_plain() || src_wrap.is_cublaslt_blocked_desc()) { src_supported = true; }
             // dst blocked in Ab32a, ab or ba
             bool dst_supported = false;
             memory_desc_wrapper dst_wrap(dst_md());
@@ -345,8 +350,8 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             if (w_wrap.format_any()) {
                 auto n_dims = batched() ? 3 : 2;
                 auto tag = batched() ? format_tag::aBc32b : format_tag::Ab32a;
-                memory_desc_init_by_tag(this->weights_md_, n_dims, w_wrap.dims(),
-                        w_wrap.data_type(), tag);
+                memory_desc_init_by_tag(this->weights_md_, n_dims,
+                        w_wrap.dims(), w_wrap.data_type(), tag);
             }
 
             memory_desc_wrapper dst_wrap(dst_md());
@@ -367,6 +372,8 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
                 auto n_batch = batched() ? src_wrap.dims()[0] : 1;
                 size_t size = n_batch * n_rows * n_cols;
 
+                this->src_md_.padded_dims[batched()] = n_rows;
+                this->src_md_.padded_dims[batched() + 1] = n_cols;
                 this->src_md_.format_kind = dnnl_format_kind_opaque;
                 this->src_md_.format_desc.cublaslt_blocked_desc
                         = cublaslt_blocked_desc_t {
