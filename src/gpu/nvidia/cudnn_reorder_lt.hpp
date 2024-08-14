@@ -61,8 +61,8 @@ struct cudnn_reorder_lt_t : public gpu::primitive_t {
                             utils::one_of(
                                     src_dt_, data_type::s8, data_type::s32));
 
-            src_float_ = src_dt_ == data_type_t::dnnl_f32;
-            dst_float_ = dst_dt_ == data_type_t::dnnl_f32;
+            src_float_ = src_dt_ == data_type::f32;
+            dst_float_ = dst_dt_ == data_type::f32;
 
             if (!ok) return ok;
 
@@ -85,27 +85,27 @@ struct cudnn_reorder_lt_t : public gpu::primitive_t {
             auto check_tag = [&](const memory_desc_wrapper &wrap,
                                      bool &transpose, format_kind_t &kind) {
                 kind=format_kind_t::dnnl_blocked;
+                if (wrap.is_cublaslt_blocked_desc()) {
+                    transpose = false;
+                    kind = format_kind::cublaslt_blocked;
+                    return format_tag::undef;
+                }
                 if (wrap.is_plain()) {
-                    auto tag = wrap.matches_one_of_tag(dnnl_ab, dnnl_abc);
-                    if (tag != dnnl_format_tag_undef) {
+                    auto tag = wrap.matches_one_of_tag(format_tag::ab, format_tag::abc);
+                    if (tag != format_tag::undef) {
                         transpose = false;
                         return tag;
                     }
-                    tag = wrap.matches_one_of_tag(dnnl_ba, dnnl_acb);
-                    if (tag != dnnl_format_tag_undef) {
+                    tag = wrap.matches_one_of_tag(format_tag::ba, format_tag::acb);
+                    if (tag != format_tag::undef) {
                         transpose = true;
                         return tag;
                     }
                 }
-                if (wrap.is_blocking_desc()) {
-                    transpose = false;
-                    return wrap.matches_one_of_tag(dnnl_Ab32a, dnnl_aBc32b);
-                }
-                if (wrap.is_cublaslt_blocked_desc()) {
-                    transpose = false;
-                    kind = format_kind::cublaslt_blocked;
-                    return dnnl_format_tag_undef;
-                }
+                // if (wrap.is_blocking_desc()) {
+                //     transpose = false;
+                //     return wrap.matches_one_of_tag(dnnl_Ab32a, dnnl_aBc32b);
+                // }
                 return dnnl_format_tag_undef;
             };
             ok = ok && src_wrap.ndims() == dst_wrap.ndims();
@@ -117,9 +117,9 @@ struct cudnn_reorder_lt_t : public gpu::primitive_t {
             dst_tag_ = check_tag(dst_wrap, dst_trans_, kind);
             ok = IMPLICATION(kind==dnnl_blocked, src_tag_!=dnnl_format_tag_undef);
 
-            ok = ok
-                    && !utils::one_of(
-                            dnnl_format_tag_undef, src_tag_, dst_tag_);
+            // ok = ok
+            //         && !utils::one_of(
+            //                 dnnl_format_tag_undef, src_tag_, dst_tag_);
             return ok;
         }
 
@@ -172,6 +172,7 @@ struct cudnn_reorder_lt_t : public gpu::primitive_t {
                     && valid_data_n_mem_format(engine)
                     && attr()->has_default_values(attr_skip_mask) && scales_ok()
                     && post_ops_ok();
+            if (!ok) return status::unimplemented;
 
             if (src_float_) { init_internal_reorder(engine, false); }
             if (dst_float_) { init_internal_reorder(engine, true); }
