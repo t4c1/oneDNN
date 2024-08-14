@@ -23,7 +23,7 @@
 #include "common/reorder_pd.hpp"
 #include "gpu/gpu_primitive.hpp"
 #include "gpu/gpu_reorder_pd.hpp"
-#include "gpu/nvidia/cudnn_reorder_impl.hpp"
+// #include "gpu/nvidia/cudnn_reorder_impl.hpp"
 #include "gpu/nvidia/engine.hpp"
 #include "gpu/nvidia/sycl_cuda_utils.hpp"
 
@@ -39,6 +39,8 @@ struct cudnn_reorder_lt_t : public gpu::primitive_t {
         using gpu_reorder_pd_t::gpu_reorder_pd_t;
 
         DECLARE_COMMON_PD_T("cuda:cublaslt:any", cudnn_reorder_lt_t);
+	pd_t(const pd_t &rhs) = default;
+        ~pd_t() = default;
 
         // Function to verify data and memory format
         bool valid_data_n_mem_format(impl::engine_t *engine) {
@@ -200,7 +202,7 @@ struct cudnn_reorder_lt_t : public gpu::primitive_t {
     status_t execute(const exec_ctx_t &ctx) const override;
     status_t execute_internal_reorder(const exec_ctx_t &ctx,
             const memory_arg_t &src, const memory_arg_t &dst,
-            const memory_arg_t *src_scales, const memory_arg_t *dst_scales);
+            const memory_arg_t *src_scales, const memory_arg_t *dst_scales) const;
 
 private:
     std::shared_ptr<impl::primitive_t> generic_reorder_;

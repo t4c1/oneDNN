@@ -28,8 +28,10 @@ namespace gpu {
 namespace nvidia {
 
 status_t cudnn_reorder_lt_t::execute_internal_reorder(const exec_ctx_t &ctx,
-        const memory_arg_t &src, const memory_arg_t &dst,
-        const memory_arg_t *src_scales, const memory_arg_t *dst_scales) {
+        const memory_arg_t &src,
+	const memory_arg_t &dst,
+        const memory_arg_t *src_scales,
+	const memory_arg_t *dst_scales) const{
 
     exec_args_t r_args;
     r_args[DNNL_ARG_SRC] = src;
@@ -42,7 +44,7 @@ status_t cudnn_reorder_lt_t::execute_internal_reorder(const exec_ctx_t &ctx,
             ctx, memory_tracking::names::key_nested, generic_reorder_);
     r_ctx.set_scratchpad_grantor(ns.grantor());
 
-    generic_reorder_->execute(r_ctx);
+    return generic_reorder_->execute(r_ctx);
 }
 status_t cudnn_reorder_lt_t::execute(const exec_ctx_t &ctx) const {
     memory_desc_wrapper wrap(pd()->src_md());
@@ -52,19 +54,27 @@ status_t cudnn_reorder_lt_t::execute(const exec_ctx_t &ctx) const {
             = utils::downcast<nvidia::stream_t *>(ctx.stream());
 
     return cuda_stream->interop_task([&](::sycl::handler &cgh) {
-        auto arg_src = CTX_IN_SYCL_MEMORY(DNNL_ARG_SRC);
-        auto arg_dst = CTX_OUT_SYCL_MEMORY(DNNL_ARG_DST);
+        auto arg_src = ctx.args().at(DNNL_ARG_SRC); // CTX_IN_SYCL_MEMORY(DNNL_ARG_SRC);
+        auto arg_dst = ctx.args().at(DNNL_ARG_DST);
         auto arg_src_scale
-                = CTX_IN_SYCL_MEMORY(DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC);
+                = ctx.args().find(DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC);
         auto arg_dst_scale
-                = CTX_IN_SYCL_MEMORY(DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST);
+                = ctx.args().find(DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST);
+	const memory_arg_t *src_scales = nullptr;
+        if (arg_src_scale != ctx.args().end()) {
+            src_scales = &arg_src_scale->second;
+        }
+	const memory_arg_t *dst_scales = nullptr;
+        if (arg_dst_scale != ctx.args().end()) {
+            dst_scales = &arg_dst_scale->second;
+        }
         if (pd()->src_float_) {
             execute_internal_reorder(
-                    ctx, arg_src, arg_dst, arg_src_scale, arg_dst_scale);
+                    ctx, arg_src, arg_dst, src_scales, dst_scales);
         }
         if (pd()->dst_float_) {
-            execute_internal_reorder(
-                    ctx, arg_dst, arg_src, arg_dst_scale, arg_src_scale);
+        //    execute_internal_reorder(
+        //            ctx, arg_dst, arg_src, arg_dst_scale, arg_src_scale);
         }
         // compat::host_task(cgh, [=, this](const compat::interop_handle &ih) {
         //     auto &sycl_engine = *utils::downcast<nvidia::engine_t *>(
