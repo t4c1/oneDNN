@@ -56,8 +56,8 @@ constexpr impl_list_item_t impl_list[] = REG_REORDER_P({
         GPU_REORDER_INSTANCE_NVIDIA(nvidia::cudnn_reorder_lt_t::pd_t)
         GPU_REORDER_INSTANCE_NVIDIA(nvidia::cudnn_reorder_t::pd_t)
         GPU_REORDER_INSTANCE_AMD(amd::miopen_reorder_t::pd_t)
-        GPU_REORDER_INSTANCE_GENERIC_SYCL(generic::sycl::ref_reorder_t::pd_t)
         GPU_REORDER_INSTANCE_GENERIC(generic::cross_engine_reorder_t::pd_t)
+        GPU_REORDER_INSTANCE_GENERIC_SYCL(generic::sycl::ref_reorder_t::pd_t)
         nullptr,
 });
 // clang-format on

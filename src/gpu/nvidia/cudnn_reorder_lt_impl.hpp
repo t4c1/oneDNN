@@ -15,9 +15,10 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef GPU_NVIDIA_CUDNN_REORDER_IMPL_HPP
-#define GPU_NVIDIA_CUDNN_REORDER_IMPL_HPP
+#ifndef GPU_NVIDIA_CUDNN_REORDER_LT_IMPL_HPP
+#define GPU_NVIDIA_CUDNN_REORDER_LT_IMPL_HPP
 
+#include <cublasLt.h>
 #include "common/type_helpers.hpp"
 #include "gpu/nvidia/sycl_cuda_utils.hpp"
 
@@ -26,243 +27,186 @@ namespace impl {
 namespace gpu {
 namespace nvidia {
 
-namespace {
-// `dims` should fit into uint16_t, when all `strides` are ones,
-// otherwise `cudnnTransformTensor` returns `CUDNN_STATUS_NOT_SUPPORTED`
-// at execution.
-status_t check_dims_and_strides(const int dims[DNNL_MAX_NDIMS],
-        const int strides[DNNL_MAX_NDIMS], int ndims) {
-    for (int d = 0; d < ndims; d++) {
-        if (strides[d] != 1) return status::success;
-    }
-    for (int d = 0; d < ndims; d++) {
-        if (dims[d] > nstl::numeric_limits<uint16_t>::max())
-            return status::unimplemented;
-    }
-    return status::success;
+template <typename T,
+        typename = typename std::enable_if<std::is_integral_v<T>>::type>
+T ceildiv(T n, T d) {
+    return (n + d - 1) / d;
 }
-} // namespace
 
 struct cublaslt_reorder_t {
 public:
-    virtual status_t init(const reorder_pd_t *pd) {
+    status_t init(reorder_pd_t *pd) {
         // If any of the dimensions are 0 we should not continue with creating
         // cudnn descriptors
-        memory_desc_wrapper wrap(pd->src_md());
-        if (wrap.size() == 0) { return status::success; }
+        memory_desc_wrapper src_wrap(pd->src_md());
+        memory_desc_wrapper dst_wrap(pd->dst_md());
+
+        if (src_wrap.size() == 0) { return status::success; }
         // Validity checks
         assert(pd->dst_md()->ndims == pd->src_md()->ndims);
 
-        get_format(pd->src_md(), src_format_);
-        get_format(pd->dst_md(), dst_format_);
-        dst_offset_in_bytes_ = pd->dst_md()->offset0
-                * types::data_type_size(pd->dst_md()->data_type);
-        src_offset_in_bytes_ = pd->src_md()->offset0
-                * types::data_type_size(pd->src_md()->data_type);
+        CUBLAS_EXECUTE_FUNC(
+                cublasLtMatrixTransformDescCreate, &trans_desc_, CUDA_R_32I);
+
         beta_ = pd->beta();
 
-        CHECK(convert_data_type(pd->src_md(), &src_data_type_));
-        CHECK(convert_data_type(pd->dst_md(), &dst_data_type_));
+        CHECK(get_cublas_data_type(pd->src_md()->data_type, src_data_type_));
+        CHECK(get_cublas_data_type(pd->dst_md()->data_type, dst_data_type_));
+        // take into account conversion from/to float
+        if (src_data_type_ == cudaDataType_t::CUDA_R_32F) {
+            src_data_type_ = cudaDataType_t::CUDA_R_8I;
+        }
+        if (dst_data_type_ == cudaDataType_t::CUDA_R_32F) {
+            dst_data_type_ = cudaDataType_t::CUDA_R_8I;
+        }
 
-        convert_dims(pd->src_md()->padded_dims, dims_, pd->src_md()->ndims);
+        ampere_src_ = src_wrap.is_cublaslt_blocked_desc();
+
+        if (ampere_src_) {
+            convert_dims(pd->dst_md()->padded_dims, dims_, pd->dst_md()->ndims);
+        } else {
+            convert_dims(pd->src_md()->padded_dims, dims_, pd->src_md()->ndims);
+        }
 
         ndims_ = pd->dst_md()->ndims > 4 ? pd->dst_md()->ndims : 4;
 
-        // Create and set tensor transform descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(
-                cudnnCreateTensorTransformDescriptor, &trans_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorTransformDescriptor,
-                trans_desc_, ndims_, dst_format_, nullptr, nullptr, nullptr,
-                cudnnFoldingDirection_t::CUDNN_TRANSFORM_FOLD));
-        // Create and set source tensor descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnCreateTensorDescriptor, &src_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorNdDescriptorEx, src_desc_,
-                src_format_, src_data_type_, ndims_, dims_));
-        // Create and set destination tensor descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnCreateTensorDescriptor, &dst_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorNdDescriptorEx, dst_desc_,
-                dst_format_, dst_data_type_, ndims_, dims_));
+        bool trans = false;
+        row_ = dims_[1];
+        col_ = dims_[0];
+        if (!ampere_src_) {
+            if (src_wrap.matches_one_of_tag(format_tag::ab)) {
+                non_ampere_order_ = CUBLASLT_ORDER_COL;
+            } else {
+                trans = true;
+                non_ampere_order_ = CUBLASLT_ORDER_ROW;
+            }
+        } else {
+            if (dst_wrap.matches_one_of_tag(format_tag::ab)) {
+                non_ampere_order_ = CUBLASLT_ORDER_COL;
+            } else {
+                trans = true;
+                non_ampere_order_ = CUBLASLT_ORDER_ROW;
+            }
+        }
+        uint64_t blocked_ld
+                = ceildiv(col_, static_cast<uint64_t>(32)) * 32 * 32;
+
+        if (ampere_src_) {
+            create_matrix_layout(src_layout_, ampere_order_, row_, col_,
+                    blocked_ld, src_data_type_);
+            //if (trans) { std::swap(row_, col_); }
+            create_matrix_layout(dst_layout_, non_ampere_order_, row_, col_,
+                    col_, dst_data_type_);
+
+        } else {
+            create_matrix_layout(src_layout_, non_ampere_order_, row_, col_,
+                    col_, src_data_type_);
+            //if (trans) { std::swap(row_, col_); }
+            create_matrix_layout(dst_layout_, ampere_order_, row_, col_,
+                    blocked_ld, dst_data_type_);
+        }
+
+        auto stride_b_blocked_
+                = ceildiv(row_, static_cast<uint64_t>(32)) * blocked_ld;
+        src_scratch_size_ = stride_b_blocked_ * src_wrap.data_type_size() * 32;
+
+        dst_scratch_size_ = src_scratch_size_;
 
         return status::success;
- 
     };
 
-    virtual void execute(cudnnHandle_t handle, void *src, void *dst,
-            void *src_scale, void *dst_scale) const = 0;
-
-    virtual ~cudnn_reorder_generic_t() {
-        CUDNN_EXECUTE_FUNC_V(cudnnDestroyTensorDescriptor, src_desc_);
-        CUDNN_EXECUTE_FUNC_V(cudnnDestroyTensorDescriptor, dst_desc_);
+    void execute(cublasHandle_t cublas_handle, void *src, void *dst,
+            void *src_scale, void *dst_scale) {
+        cudaStream_t streamId;
+        auto lt_handle = (cublasLtHandle_t)(cublas_handle);
+        CUBLAS_EXECUTE_FUNC(cublasGetStream, cublas_handle, &streamId);
+        int alpha = 1;
+        if (src_scale) {
+            float host_src_scale = 1.0f;
+            CUDA_EXECUTE_FUNC(cuMemcpy, (CUdeviceptr)&host_src_scale,
+                    (CUdeviceptr)src_scale, sizeof(float));
+            alpha *= host_src_scale;
+        }
+        int beta = beta_;
+        if (dst_scale) {
+            float host_dst_scale = 1.0f;
+            CUDA_EXECUTE_FUNC(cuMemcpy, (CUdeviceptr)&host_dst_scale,
+                    (CUdeviceptr)dst_scale, sizeof(float));
+            alpha /= host_dst_scale;
+            beta /= host_dst_scale;
+        }
+        CUBLAS_EXECUTE_FUNC(cublasLtMatrixTransform, lt_handle, trans_desc_,
+                &alpha, src, src_layout_, &beta, dst, dst_layout_, dst,
+                dst_layout_, streamId);
     }
 
-    int dst_offset_in_bytes() { return dst_offset_in_bytes_; }
-    int src_offset_in_bytes() { return src_offset_in_bytes_; }
+    ~cublaslt_reorder_t() { cleanup(); }
+
+    void cleanup() {
+        if (src_layout_) {
+            CUBLAS_EXECUTE_FUNC(cublasLtMatrixLayoutDestroy, src_layout_);
+            src_layout_ = nullptr;
+        }
+        if (dst_layout_) {
+            CUBLAS_EXECUTE_FUNC(cublasLtMatrixLayoutDestroy, dst_layout_);
+            dst_layout_ = nullptr;
+        }
+        if (trans_desc_) {
+            CUBLAS_EXECUTE_FUNC(
+                    cublasLtMatrixTransformDescDestroy, trans_desc_);
+            trans_desc_ = nullptr;
+        }
+    }
+
+    void init_scratchpad(reorder_pd_t *pd,
+            const impl::primitive_desc_t *generic_reorder_desc) {
+
+        auto scratchpad = pd->scratchpad_registry().registrar();
+        scratchpad.book(memory_tracking::names::key_nested,
+                generic_reorder_desc->scratchpad_registry());
+        if (src_scratch_size_) {
+            scratchpad.book(
+                    memory_tracking::names::key_reorder_cublaslt_src_float,
+                    src_scratch_size_ * 64, 1, 256);
+        }
+        if (dst_scratch_size_) {
+            scratchpad.book(
+                    memory_tracking::names::key_reorder_cublaslt_dst_float,
+                    dst_scratch_size_ * 64, 1, 256);
+        }
+    }
 
 protected:
-    cudnnDataType_t src_data_type_;
-    cudnnDataType_t dst_data_type_;
+    cudaDataType_t src_data_type_;
+    cudaDataType_t dst_data_type_;
     int ndims_;
     int dims_[DNNL_MAX_NDIMS];
-    cudnnTensorDescriptor_t src_desc_;
-    cudnnTensorDescriptor_t dst_desc_;
     float beta_ = 0.0f;
-    int dst_offset_in_bytes_ = 0;
-    int src_offset_in_bytes_ = 0;
-};
 
-// This structure is used when the memory format includes blocking
-struct cudnn_reorder_ex_t : public cudnn_reorder_generic_t {
-public:
-    status_t init(const reorder_pd_t *pd) override {
-        // If any of the dimensions are 0 we should not continue with creating
-        // cudnn descriptors
-        memory_desc_wrapper wrap(pd->src_md());
-        if (wrap.size() == 0) { return status::success; }
-        // Validity checks
-        assert(pd->dst_md()->ndims == pd->src_md()->ndims);
+    cublasLtMatrixTransformDesc_t trans_desc_;
+    cublasLtMatrixLayout_t src_layout_;
+    cublasLtMatrixLayout_t dst_layout_;
+    uint64_t src_scratch_size_ = 0;
+    uint64_t dst_scratch_size_ = 0;
 
-        get_format(pd->src_md(), src_format_);
-        get_format(pd->dst_md(), dst_format_);
-        dst_offset_in_bytes_ = pd->dst_md()->offset0
-                * types::data_type_size(pd->dst_md()->data_type);
-        src_offset_in_bytes_ = pd->src_md()->offset0
-                * types::data_type_size(pd->src_md()->data_type);
-        beta_ = pd->beta();
+    uint64_t row_, col_;
 
-        CHECK(convert_data_type(pd->src_md(), &src_data_type_));
-        CHECK(convert_data_type(pd->dst_md(), &dst_data_type_));
+    cublasLtOrder_t ampere_order_ = CUBLASLT_ORDER_COL32_2R_4R4;
+    cublasLtOrder_t non_ampere_order_ = CUBLASLT_ORDER_COL;
 
-        convert_dims(pd->src_md()->padded_dims, dims_, pd->src_md()->ndims);
+    bool ampere_src_ = false;
 
-        ndims_ = pd->dst_md()->ndims > 4 ? pd->dst_md()->ndims : 4;
+    status_t create_matrix_layout(cublasLtMatrixLayout_t &layout,
+            cublasLtOrder_t order, uint64_t row, uint64_t col, uint64_t ld,
+            const cudaDataType_t data_type) {
 
-        // Create and set tensor transform descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(
-                cudnnCreateTensorTransformDescriptor, &trans_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorTransformDescriptor,
-                trans_desc_, ndims_, dst_format_, nullptr, nullptr, nullptr,
-                cudnnFoldingDirection_t::CUDNN_TRANSFORM_FOLD));
-        // Create and set source tensor descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnCreateTensorDescriptor, &src_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorNdDescriptorEx, src_desc_,
-                src_format_, src_data_type_, ndims_, dims_));
-        // Create and set destination tensor descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnCreateTensorDescriptor, &dst_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorNdDescriptorEx, dst_desc_,
-                dst_format_, dst_data_type_, ndims_, dims_));
+        CUBLAS_EXECUTE_FUNC(
+                cublasLtMatrixLayoutCreate, &layout, data_type, row, col, ld);
 
-        return status::success;
+        CUBLAS_EXECUTE_FUNC(cublasLtMatrixLayoutSetAttribute, layout,
+                CUBLASLT_MATRIX_LAYOUT_ORDER, &order, sizeof(order));
+        return status_t::dnnl_success;
     }
-
-    void execute(cudnnHandle_t handle, void *src, void *dst, void *src_scale,
-            void *dst_scale) const override {
-        float alpha = 1.0f;
-        if (src_scale) {
-            float host_src_scale = 1.0f;
-            CUDA_EXECUTE_FUNC(cuMemcpy, (CUdeviceptr)&host_src_scale,
-                    (CUdeviceptr)src_scale, sizeof(float));
-            alpha *= host_src_scale;
-        }
-        float beta = beta_;
-        if (dst_scale) {
-            float host_dst_scale = 1.0f;
-            CUDA_EXECUTE_FUNC(cuMemcpy, (CUdeviceptr)&host_dst_scale,
-                    (CUdeviceptr)dst_scale, sizeof(float));
-            alpha /= host_dst_scale;
-            beta /= host_dst_scale;
-        }
-        // cudnnTransformTensorEx() function is required to support blocking.
-        // It requires the output tensor to be in cuDNN supported format.
-        CUDNN_EXECUTE_FUNC(cudnnTransformTensorEx, handle, trans_desc_, &alpha,
-                src_desc_, src, &beta, dst_desc_, dst);
-    }
-
-    ~cudnn_reorder_ex_t() {
-        CUDNN_EXECUTE_FUNC_V(
-                cudnnDestroyTensorTransformDescriptor, trans_desc_);
-    }
-
-private:
-    cudnnTensorFormat_t src_format_;
-    cudnnTensorFormat_t dst_format_;
-    cudnnTensorTransformDescriptor_t trans_desc_;
-
-    using cudnn_reorder_generic_t::cudnn_reorder_generic_t;
-};
-
-// This structure is used when the memory format does not include blocking
-struct cudnn_reorder_stride_t : public cudnn_reorder_generic_t {
-public:
-    status_t init(const reorder_pd_t *pd) override {
-        // If any of the dimensions are 0 we should not continue with creating
-        // cudnn descriptors
-        memory_desc_wrapper wrap(pd->src_md());
-        if (wrap.size() == 0) { return status::success; }
-
-        // Validity checks
-        assert(pd->dst_md()->ndims == pd->src_md()->ndims);
-        dst_offset_in_bytes_ = pd->dst_md()->offset0
-                * types::data_type_size(pd->dst_md()->data_type);
-        src_offset_in_bytes_ = pd->src_md()->offset0
-                * types::data_type_size(pd->src_md()->data_type);
-        beta_ = pd->beta();
-
-        convert_dims(pd->dst_md()->dims, dims_, pd->dst_md()->ndims);
-        convert_dims(pd->src_md()->format_desc.blocking.strides, src_strides_,
-                pd->src_md()->ndims);
-        convert_dims(pd->dst_md()->format_desc.blocking.strides, dst_strides_,
-                pd->dst_md()->ndims);
-        adjust_dim_for_dnn(dims_, pd->dst_md()->ndims, pd->src_md());
-        adjust_stride_for_dnn(src_strides_, pd->dst_md()->ndims, pd->src_md());
-        adjust_stride_for_dnn(dst_strides_, pd->dst_md()->ndims, pd->dst_md());
-        ndims_ = pd->dst_md()->ndims >= 4 ? pd->dst_md()->ndims
-                        + pd->dst_md()->format_desc.blocking.inner_nblks
-                                          : 4;
-        bool vectorized = has_different_block_size(pd->src_md(), pd->dst_md());
-        CHECK(convert_data_type(pd->src_md(), &src_data_type_, vectorized));
-        CHECK(convert_data_type(pd->dst_md(), &dst_data_type_, vectorized));
-        // Create and set source tensor descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnCreateTensorDescriptor, &src_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorNdDescriptor, src_desc_,
-                src_data_type_, ndims_, dims_, src_strides_));
-        // Create and set destination tensor descriptor
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnCreateTensorDescriptor, &dst_desc_));
-        CHECK(CUDNN_EXECUTE_FUNC_S(cudnnSetTensorNdDescriptor, dst_desc_,
-                dst_data_type_, ndims_, dims_, dst_strides_));
-
-        CHECK(check_dims_and_strides(dims_, src_strides_, ndims_));
-        return status::success;
-    }
-
-    void execute(cudnnHandle_t handle, void *src, void *dst, void *src_scale,
-            void *dst_scale) const override {
-        float alpha = 1.0f;
-        if (src_scale) {
-            float host_src_scale = 1.0f;
-            CUDA_EXECUTE_FUNC(cuMemcpy, (CUdeviceptr)&host_src_scale,
-                    (CUdeviceptr)src_scale, sizeof(float));
-            alpha *= host_src_scale;
-        }
-        float beta = beta_;
-        if (dst_scale) {
-            float host_dst_scale = 1.0f;
-            CUDA_EXECUTE_FUNC(cuMemcpy, (CUdeviceptr)&host_dst_scale,
-                    (CUdeviceptr)dst_scale, sizeof(float));
-            alpha /= host_dst_scale;
-            beta /= host_dst_scale;
-        }
-        // We don't need to specify the format (deducible using the strides)
-        // in case of cudnnTransformTensor().
-        // For example, this is useful when converting from abcd to bacd
-        CUDNN_EXECUTE_FUNC(cudnnTransformTensor, handle, &alpha, src_desc_, src,
-                &beta, dst_desc_, dst);
-    }
-
-private:
-    int src_strides_[DNNL_MAX_NDIMS];
-    int dst_strides_[DNNL_MAX_NDIMS];
-
-    using cudnn_reorder_generic_t::cudnn_reorder_generic_t;
 };
 
 } // namespace nvidia

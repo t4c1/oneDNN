@@ -190,6 +190,29 @@ static status_t convert_data_type(const memory_desc_t *mem_desc,
     return status::success;
 }
 
+static status_t get_cublas_data_type(
+        dnnl_data_type_t data_type, cudaDataType_t &blas_dt) {
+    switch (data_type) {
+        case dnnl_data_type_t::dnnl_f32:
+            blas_dt = CUDA_R_32F;
+            return status::success;
+        case dnnl_data_type_t::dnnl_f16:
+            blas_dt = CUDA_R_16F;
+            return status::success;
+        case dnnl_data_type_t::dnnl_bf16:
+            blas_dt = CUDA_R_16BF;
+            return status::success;
+        case dnnl_data_type_t::dnnl_s8:
+            blas_dt = CUDA_R_8I;
+            return status::success;
+        case dnnl_data_type_t::dnnl_s32:
+            blas_dt = CUDA_R_32I;
+            return status::success;
+        default: return status::unimplemented;
+    }
+    return status::unimplemented;
+}
+
 inline bool is_md_col32(const memory_desc_wrapper &md) {
     // cublas operates in col-major so this function checks if the rows are blocked in 32.
     if (md.is_blocking_desc()) {
@@ -245,7 +268,7 @@ protected:
 public:
     explicit cublas_error(const std::string &message, cublasStatus_t result)
         : std::runtime_error(
-                  (message + std::string(cublas_error_map(result)))) {
+                (message + std::string(cublas_error_map(result)))) {
         error_number_ = static_cast<int>(result);
     }
 
@@ -281,7 +304,7 @@ public:
 
     explicit cuda_error(const std::string &message, cudaError_t result)
         : std::runtime_error(
-                  (message + std::to_string(static_cast<int>(result)))) {
+                (message + std::to_string(static_cast<int>(result)))) {
         error_number_ = static_cast<int>(result);
     }
     virtual ~cuda_error() throw() {}
@@ -325,7 +348,7 @@ protected:
 public:
     explicit cudnn_error(const std::string &message, cudnnStatus_t result)
         : std::runtime_error(
-                  (message + std::string(cudnn_get_error_string(result)))) {
+                (message + std::string(cudnn_get_error_string(result)))) {
         error_number_ = static_cast<int>(result);
     }
 

@@ -65,8 +65,7 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
 
             bool is_eltwise_ok = eltwise_ok();
 
-            bool ok = is_dense_format_kind()
-                    && blocking_ok()
+            bool ok = is_dense_format_kind() && blocking_ok()
                     && attr()->has_default_values(smask_t::scales_runtime)
                     && attr_post_ops_ok(attr())
                     && IMPLICATION(bf16_case,
@@ -337,7 +336,9 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             // src plain format or internal cublaslt format
             bool src_supported = false;
             memory_desc_wrapper src_wrap(src_md());
-            if (src_wrap.is_plain() || src_wrap.is_cublaslt_blocked_desc()) { src_supported = true; }
+            if (src_wrap.is_plain() || src_wrap.is_cublaslt_blocked_desc()) {
+                src_supported = true;
+            }
             // dst blocked in Ab32a, ab or ba
             bool dst_supported = false;
             memory_desc_wrapper dst_wrap(dst_md());
@@ -367,20 +368,23 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
             if (src_wrap.format_any()) {
 
                 auto ceildiv = [](dim_t n, dim_t d) { return (n + d - 1) / d; };
-
                 auto n_rows = 32 * ceildiv(src_wrap.dims()[batched()], 32);
                 auto n_cols = 32 * ceildiv(src_wrap.dims()[batched() + 1], 32);
                 auto n_batch = batched() ? src_wrap.dims()[0] : 1;
                 size_t size = n_batch * n_rows * n_cols;
 
-                this->src_md_.padded_dims[batched()] = n_rows;
-                this->src_md_.padded_dims[batched() + 1] = n_cols;
+                //this->src_md_.padded_dims[batched()] = n_rows;
+                //this->src_md_.padded_dims[batched() + 1] = n_cols;
+                auto n_dims = batched() ? 3 : 2;
+                auto tag = batched() ? format_tag::abc : format_tag::ab;
+                memory_desc_init_by_tag(this->src_md_, n_dims, src_wrap.dims(),
+                        src_wrap.data_type(), tag);
                 this->src_md_.format_kind = format_kind::cublaslt_blocked;
                 this->src_md_.format_desc.cublaslt_blocked_desc
                         = cublaslt_blocked_desc_t {
                                 cublaslt_memory_format_t::ampere_blocked, size};
             }
-            return true;    
+            return true;
         }
     };
 
@@ -424,7 +428,9 @@ struct cudnn_matmul_lt_t : cudnn_matmul_base_t {
     std::shared_ptr<cudnn_matmul_lt_base_exec_t> executor_;
 
 private:
-    const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
+    const pd_t *pd() const {
+        return (const pd_t *)primitive_t::pd().get();
+    }
 };
 
 } // namespace nvidia

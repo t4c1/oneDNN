@@ -293,11 +293,12 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         trans_c_ = !is_md_col_major(dst_d);
         // A matrix is the weights
         trans_a_ = !is_md_col_major(weights_d);
-
         // B matrix is the src
-        trans_b_ = !w_blocked_ ? !is_md_col_major(src_d) : false;
+        trans_b_ = !is_md_col_major(src_d);
+
         if (imma_ampere_case_) {
             // IMMA kernels support only NT->N config
+            //trans_b_ = false;
             if (w_blocked_) { trans_a_ = false; }
             if (dst_blocked_) { trans_c_ = false; }
         }
@@ -466,9 +467,9 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         CUBLAS_EXECUTE_FUNC(cublasGetStream, cublas_handle, &streamId);
 
         if (imma_ampere_case_) {
-            transform_matrix(lt_handle, b_layout_, b, blocked_b_layout_,
-                    block_b_scratch, !trans_b_, streamId);
-            b = block_b_scratch;
+            //transform_matrix(lt_handle, b_layout_, b, blocked_b_layout_,
+            //        block_b_scratch, !trans_b_, streamId);
+            //b = block_b_scratch;
             if (!w_blocked_) {
                 transform_matrix(lt_handle, a_layout_, a, blocked_a_layout_,
                         block_a_scratch, trans_a_, streamId);
@@ -796,8 +797,11 @@ private:
     }
 
     bool is_md_col_major(const memory_desc_wrapper &md) {
-        const auto &md_strides = &md.blocking_desc().strides[isbatched_];
-        return (md_strides[1] == 1 && md.dims()[isbatched_ + 0] > 1);
+        if (md.is_blocking_desc()) {
+            const auto &md_strides = &md.blocking_desc().strides[isbatched_];
+            return (md_strides[1] == 1 && md.dims()[isbatched_ + 0] > 1);
+        }
+        return false;
     }
 
     void maybe_swap(uint64_t &row, uint64_t &col, cublasOperation_t &op,

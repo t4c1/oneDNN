@@ -141,29 +141,6 @@ struct cudnn_matmul_base_impl_t {
         return dims[0] == 1 ? 0 : strides[0];
     }
 
-    status_t get_cublas_data_type(
-            dnnl_data_type_t data_type, cudaDataType_t &blas_dt) {
-        switch (data_type) {
-            case dnnl_data_type_t::dnnl_f32:
-                blas_dt = CUDA_R_32F;
-                return status::success;
-            case dnnl_data_type_t::dnnl_f16:
-                blas_dt = CUDA_R_16F;
-                return status::success;
-            case dnnl_data_type_t::dnnl_bf16:
-                blas_dt = CUDA_R_16BF;
-                return status::success;
-            case dnnl_data_type_t::dnnl_s8:
-                blas_dt = CUDA_R_8I;
-                return status::success;
-            case dnnl_data_type_t::dnnl_s32:
-                blas_dt = CUDA_R_32I;
-                return status::success;
-            default: return status::unimplemented;
-        }
-        return status::unimplemented;
-    }
-
     virtual ~cudnn_matmul_base_impl_t() = default;
 
     size_t bias_scratch_size() { return reorder_scratch_size_; }
