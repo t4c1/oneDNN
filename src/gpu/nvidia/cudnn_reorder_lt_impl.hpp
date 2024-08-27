@@ -35,6 +35,7 @@ T ceildiv(T n, T d) {
 
 struct cublaslt_reorder_t {
 public:
+    bool trans;
     status_t init(reorder_pd_t *pd) {
         // If any of the dimensions are 0 we should not continue with creating
         // cudnn descriptors
@@ -70,7 +71,7 @@ public:
 
         ndims_ = pd->dst_md()->ndims > 4 ? pd->dst_md()->ndims : 4;
 
-        bool trans = false;
+        trans = false;
         row_ = dims_[1];
         col_ = dims_[0];
         if (!ampere_src_) {
@@ -102,7 +103,7 @@ public:
             create_matrix_layout(src_layout_, non_ampere_order_, row_, col_,
                     col_, src_data_type_);
             //if (trans) { std::swap(row_, col_); }
-            create_matrix_layout(dst_layout_, ampere_order_, row_, col_,
+            create_matrix_layout(dst_layout_, ampere_order_, row_,col_,  
                     blocked_ld, dst_data_type_);
         }
 
@@ -127,6 +128,7 @@ public:
                     (CUdeviceptr)src_scale, sizeof(float));
             alpha *= host_src_scale;
         }
+        std::cout << "alpha computed " << alpha << std::endl;
         int beta = beta_;
         if (dst_scale) {
             float host_dst_scale = 1.0f;
@@ -135,6 +137,12 @@ public:
             alpha /= host_dst_scale;
             beta /= host_dst_scale;
         }
+        std::cout << "trans " << trans << std::endl;
+        cublasOperation_t transform_trans
+                = trans ? CUBLAS_OP_T : CUBLAS_OP_N;
+        CUBLAS_EXECUTE_FUNC(cublasLtMatrixTransformDescSetAttribute,
+                trans_desc_, CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSA,
+                &transform_trans, sizeof(transform_trans));
         CUBLAS_EXECUTE_FUNC(cublasLtMatrixTransform, lt_handle, trans_desc_,
                 &alpha, src, src_layout_, &beta, dst, dst_layout_, dst,
                 dst_layout_, streamId);

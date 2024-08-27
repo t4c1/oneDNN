@@ -467,9 +467,11 @@ struct cudnn_matmul_lt_impl_t : cudnn_matmul_base_impl_t {
         CUBLAS_EXECUTE_FUNC(cublasGetStream, cublas_handle, &streamId);
 
         if (imma_ampere_case_) {
-            //transform_matrix(lt_handle, b_layout_, b, blocked_b_layout_,
-            //        block_b_scratch, !trans_b_, streamId);
-            //b = block_b_scratch;
+            if (!src_blocked_) {
+                transform_matrix(lt_handle, b_layout_, b, blocked_b_layout_,
+                        block_b_scratch, !trans_b_, streamId);
+                b = block_b_scratch;
+            }
             if (!w_blocked_) {
                 transform_matrix(lt_handle, a_layout_, a, blocked_a_layout_,
                         block_a_scratch, trans_a_, streamId);
